@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenCode Summarizer</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-dot"></div>
+      opencode / summarize
+    </div>
+    <div class="header-right">
+      <div class="status-badge">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">checking...</span>
+      </div>
+      <button class="settings-btn" id="settingsBtn" title="Settings">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Settings Panel -->
+  <div class="settings-panel hidden" id="settingsPanel">
+    <div class="setting-row">
+      <label>⚙ OpenCode Server URL</label>
+      <input type="text" id="serverUrl" placeholder="http://localhost:4096" />
+    </div>
+    <div class="setting-row">
+      <label>语言 / Language</label>
+      <select id="outputLang">
+        <option value="zh">中文</option>
+        <option value="en">English</option>
+        <option value="auto">与文章相同</option>
+      </select>
+    </div>
+    <button class="save-btn" id="saveSettings">保存设置</button>
+  </div>
+
+  <!-- Page Info -->
+  <div class="page-info">
+    <div class="page-icon">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+        <path d="M2 2h12v12H2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="page-title" id="pageTitle">Loading...</div>
+  </div>
+
+  <!-- Prompt Area -->
+  <div class="prompt-area">
+    <div class="quick-prompts">
+      <div class="chip" data-prompt="请用中文总结这篇文章的核心要点，3-5个要点，每个要点一句话。">📝 核心要点</div>
+      <div class="chip" data-prompt="用一段话简要总结这篇文章的主要内容（中文，100字以内）。">⚡ 一句话总结</div>
+      <div class="chip" data-prompt="请从这个视频字幕中提取完整的菜谱，格式如下：菜名、所需食材及用量、调料及用量、详细操作步骤（按顺序编号，包含火候、时间等关键细节）、小贴士。语言精简清晰，方便照着做菜。">🍳 整理菜谱</div>
+      <div class="chip" data-prompt="用中文总结这篇文章，包括：背景、主要内容、结论和关键数据。">📊 详细总结</div>
+    </div>
+    <div class="prompt-row">
+      <textarea id="promptInput" placeholder="自定义提示词，或点击上方快捷选项..." rows="2">请用中文总结这篇文章的核心要点，3-5个要点，每个要点一句话。</textarea>
+      <button class="run-btn" id="runBtn">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+          <path d="M3 2l11 6-11 6V2z" fill="currentColor"/>
+        </svg>
+        运行
+      </button>
+    </div>
+  </div>
+
+  <!-- Error Box -->
+  <div class="error-box" id="errorBox"></div>
+
+  <!-- Result Area -->
+  <div class="result-area" id="resultArea">
+    <div class="result-header">
+      <div class="result-label">
+        <div class="spinner" id="spinner"></div>
+        结果
+      </div>
+      <div class="result-actions">
+        <button class="icon-btn" id="copyBtn" title="复制结果">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M11 5V3.5A1.5 1.5 0 009.5 2h-7A1.5 1.5 0 001 3.5v7A1.5 1.5 0 002.5 12H5" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="clearBtn" title="清空">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <path d="M2 4h12M5 4V2.5A1.5 1.5 0 016.5 1h3A1.5 1.5 0 0111 2.5V4M6 7v5M10 7v5M3 4l1 9.5A1.5 1.5 0 005.5 15h5a1.5 1.5 0 001.5-1.5L13 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="result-content" id="resultContent"></div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-info" id="footerInfo">opencode serve --cors chrome-extension://</div>
+    <div class="copied-toast" id="copiedToast">✓ 已复制</div>
+  </div>
+
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>
