@@ -47,24 +47,22 @@
 
   function clickSend() {
     return new Promise((resolve, reject) => {
-      setTimeout(() => {
+      let attempts = 0;
+      const maxAttempts = 60; // 30 seconds max
+      const timer = setInterval(() => {
+        attempts++;
         const btn = findSendButton();
         if (btn && !btn.disabled) {
+          clearInterval(timer);
           btn.click();
           resolve();
-        } else {
-          const textarea = findTextarea();
-          if (textarea) {
-            textarea.dispatchEvent(new KeyboardEvent('keydown', {
-              key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
-              bubbles: true, cancelable: true
-            }));
-            resolve();
-          } else {
-            reject(new Error('找不到发送按钮'));
-          }
+          return;
         }
-      }, 200);
+        if (attempts >= maxAttempts) {
+          clearInterval(timer);
+          reject(new Error('发送按钮超时未就绪'));
+        }
+      }, 500);
     });
   }
 
