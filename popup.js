@@ -41,33 +41,22 @@ function waitForTabLoad(tabId) {
 
 // Ensure the content script is injected and ChatGPT is ready
 async function ensureChatGPTReady(tabId) {
-  try {
-    const response = await chrome.tabs.sendMessage(tabId, { type: 'CHATGPT_CHECK_READY' });
-    if (response && response.ready) return true;
-    if (response && !response.loggedIn) {
-      showError('请先登录 chatgpt.com，然后重试。');
-      return false;
-    }
-  } catch (e) {
+  const maxAttempts = 10;
+  for (let i = 0; i < maxAttempts; i++) {
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: ['chatgpt-content.js']
-      });
-      await new Promise(r => setTimeout(r, 500));
       const response = await chrome.tabs.sendMessage(tabId, { type: 'CHATGPT_CHECK_READY' });
       if (response && response.ready) return true;
       if (response && !response.loggedIn) {
         showError('请先登录 chatgpt.com，然后重试。');
         return false;
       }
-    } catch (e2) {
-      showError('无法连接到 ChatGPT 页面，请刷新 chatgpt.com 后重试。');
-      return false;
+    } catch (e) {
+      // Content script not yet initialized, retry
     }
+    await new Promise(r => setTimeout(r, 500));
   }
 
-  showError('ChatGPT 页面未就绪，请等待页面加载完成后重试。');
+  showError('无法连接到 ChatGPT 页面，请刷新 chatgpt.com 后重试。');
   return false;
 }
 

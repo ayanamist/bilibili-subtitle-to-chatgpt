@@ -5,7 +5,6 @@
   "description": "提取 B 站视频字幕并发送到 ChatGPT",
   "permissions": [
     "activeTab",
-    "scripting",
     "tabs"
   ],
   "host_permissions": [
