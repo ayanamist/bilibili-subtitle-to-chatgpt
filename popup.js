@@ -73,71 +73,59 @@ async function ensureChatGPTReady(tabId) {
 
 // Fetch Bilibili subtitle from extension context (bypasses page CSP)
 async function fetchBilibiliSubtitle(pageUrl) {
-  try {
-    const bvMatch = pageUrl.match(/\/video\/(BV[\w]+)/);
-    if (!bvMatch) {
-      console.warn('[Subtitle] No BV id found in URL');
-      return null;
-    }
-    const bvid = bvMatch[1];
-    console.log('[Subtitle] BV id:', bvid);
-
-    // Step 1: Get aid and cid from view API
-    const viewUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
-    const viewRes = await fetch(viewUrl);
-    const viewData = await viewRes.json();
-
-    const aid = viewData?.data?.aid;
-    if (!aid) {
-      console.warn('[Subtitle] Missing aid from view API');
-      return null;
-    }
-
-    // Determine cid based on page number (for multi-part videos)
-    const pMatch = pageUrl.match(/[?&]p=(\d+)/);
-    const pageNum = pMatch ? parseInt(pMatch[1], 10) : 1;
-    const pages = viewData?.data?.pages;
-    const cid = pages?.[pageNum - 1]?.cid || viewData?.data?.cid;
-    if (!cid) {
-      console.warn('[Subtitle] Missing cid from view API');
-      return null;
-    }
-    console.log('[Subtitle] aid:', aid, 'cid:', cid, 'page:', pageNum);
-
-    // Step 2: Get subtitle list from player API
-    const playerUrl = `https://api.bilibili.com/x/player/wbi/v2?aid=${aid}&cid=${cid}`;
-    const playerRes = await fetch(playerUrl);
-    const playerData = await playerRes.json();
-
-    const subtitles = playerData?.data?.subtitle?.subtitles;
-    if (!subtitles || subtitles.length === 0) {
-      console.warn('[Subtitle] No subtitles available');
-      return null;
-    }
-
-    // Prefer Chinese subtitle
-    const zhSub = subtitles.find(s => s.lan === 'ai-zh');
-    if (!zhSub) {
-      console.warn("[Subtitle] ai-zh subtitle not found");
-      return null;
-    }
-    let subtitleUrl = zhSub.subtitle_url;
-    if (subtitleUrl.startsWith('//')) subtitleUrl = 'https:' + subtitleUrl;
-
-    // Step 3: Fetch subtitle content
-    const subRes = await fetch(subtitleUrl);
-    const subData = await subRes.json();
-
-    if (!subData?.body || subData.body.length === 0) {
-      console.warn('[Subtitle] Subtitle body is empty');
-      return null;
-    }
-
-    return subData.body;
-  } catch (e) {
-    console.error('[Subtitle] Bilibili subtitle fetch error:', e);
-    return null;
+  const bvMatch = pageUrl.match(/\/video\/(BV[\w]+)/);
+  if (!bvMatch) {
+    throw new Error('URL 中未找到 BV 号');
   }
+  const bvid = bvMatch[1];
+
+  // Step 1: Get aid and cid from view API
+  const viewUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
+  const viewRes = await fetch(viewUrl);
+  const viewData = await viewRes.json();
+
+  const aid = viewData?.data?.aid;
+  if (!aid) {
+    throw new Error(`视频信息获取失败 (code: ${viewData?.code}, msg: ${viewData?.message || '未知'})`);
+  }
+
+  // Determine cid based on page number (for multi-part videos)
+  const pMatch = pageUrl.match(/[?&]p=(\d+)/);
+  const pageNum = pMatch ? parseInt(pMatch[1], 10) : 1;
+  const pages = viewData?.data?.pages;
+  const cid = pages?.[pageNum - 1]?.cid || viewData?.data?.cid;
+  if (!cid) {
+    throw new Error(`未找到第 ${pageNum} P 的视频信息`);
+  }
+
+  // Step 2: Get subtitle list from player API
+  const playerUrl = `https://api.bilibili.com/x/player/wbi/v2?aid=${aid}&cid=${cid}`;
+  const playerRes = await fetch(playerUrl);
+  const playerData = await playerRes.json();
+
+  const subtitles = playerData?.data?.subtitle?.subtitles;
+  if (!subtitles || subtitles.length === 0) {
+    throw new Error('该视频没有字幕（需要视频有 AI 字幕）');
+  }
+
+  // Prefer Chinese subtitle
+  const zhSub = subtitles.find(s => s.lan === 'ai-zh');
+  if (!zhSub) {
+    const available = subtitles.map(s => `${s.lan}(${s.lan_doc})`).join(', ');
+    throw new Error(`未找到 AI 中文字幕，可用字幕: ${available}`);
+  }
+  let subtitleUrl = zhSub.subtitle_url;
+  if (subtitleUrl.startsWith('//')) subtitleUrl = 'https:' + subtitleUrl;
+
+  // Step 3: Fetch subtitle content
+  const subRes = await fetch(subtitleUrl);
+  const subData = await subRes.json();
+
+  if (!subData?.body || subData.body.length === 0) {
+    throw new Error('字幕内容为空');
+  }
+
+  return subData.body;
 }
 
 // Convert seconds to SRT time format: HH:MM:SS,mmm
@@ -178,11 +166,6 @@ async function run() {
     const bvid = pageUrl.match(/\/video\/(BV[\w]+)/)?.[1] || '';
     setStatus(`正在获取字幕... (${bvid})`);
     const subtitleBody = await fetchBilibiliSubtitle(pageUrl);
-
-    if (!subtitleBody) {
-      showError('未能获取 B 站字幕。请确认：\n1. 已登录 B 站\n2. 该视频有 AI 字幕（播放器右下角有"字幕"按钮）');
-      return;
-    }
 
     const srtContent = subtitleToSrt(subtitleBody);
     const title = tab.title || 'bilibili-subtitle';
