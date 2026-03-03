@@ -6,9 +6,9 @@
   --bg: #0e0e10;
   --surface: #18181b;
   --border: #2a2a30;
-  --accent: #7fff7f;
-  --accent-dim: rgba(127, 255, 127, 0.12);
-  --accent-glow: rgba(127, 255, 127, 0.06);
+  --accent: #10a37f;
+  --accent-dim: rgba(16, 163, 127, 0.12);
+  --accent-glow: rgba(16, 163, 127, 0.06);
   --text: #e8e8ea;
   --text-muted: #6b6b72;
   --text-dim: #9898a0;
@@ -153,7 +153,7 @@ input:focus, select:focus, textarea:focus {
 .save-btn {
   align-self: flex-end;
   background: var(--accent-dim);
-  border: 1px solid rgba(127, 255, 127, 0.3);
+  border: 1px solid rgba(16, 163, 127, 0.3);
   color: var(--accent);
   border-radius: var(--radius);
   font-family: 'DM Mono', monospace;
@@ -163,7 +163,7 @@ input:focus, select:focus, textarea:focus {
   transition: background 0.15s;
   letter-spacing: 0.03em;
 }
-.save-btn:hover { background: rgba(127, 255, 127, 0.2); }
+.save-btn:hover { background: rgba(16, 163, 127, 0.2); }
 
 /* Page info */
 .page-info {
@@ -233,7 +233,7 @@ textarea#promptInput {
   white-space: nowrap;
 }
 .chip:hover {
-  border-color: rgba(127, 255, 127, 0.4);
+  border-color: rgba(16, 163, 127, 0.4);
   color: var(--accent);
   background: var(--accent-dim);
 }

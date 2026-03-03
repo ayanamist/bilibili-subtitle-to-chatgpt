@@ -1,17 +1,15 @@
-const DEFAULT_SERVER = 'http://localhost:4096';
-
-let serverUrl = DEFAULT_SERVER;
 let outputLang = 'zh';
 let currentText = '';
 let isRunning = false;
-let abortController = null;
+let chatgptTabId = null;
+let currentRequestId = null;
+let messageListener = null;
 
 // DOM
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsPanel = document.getElementById('settingsPanel');
-const serverUrlInput = document.getElementById('serverUrl');
 const outputLangSelect = document.getElementById('outputLang');
 const saveSettingsBtn = document.getElementById('saveSettings');
 const pageTitle = document.getElementById('pageTitle');
@@ -29,21 +27,17 @@ const chips = document.querySelectorAll('.chip');
 
 // Load settings
 async function loadSettings() {
-  const data = await chrome.storage.local.get(['serverUrl', 'outputLang']);
-  serverUrl = data.serverUrl || DEFAULT_SERVER;
+  const data = await chrome.storage.local.get(['outputLang']);
   outputLang = data.outputLang || 'zh';
-  serverUrlInput.value = serverUrl;
   outputLangSelect.value = outputLang;
 }
 
 // Save settings
 saveSettingsBtn.addEventListener('click', async () => {
-  serverUrl = serverUrlInput.value.trim() || DEFAULT_SERVER;
   outputLang = outputLangSelect.value;
-  await chrome.storage.local.set({ serverUrl, outputLang });
+  await chrome.storage.local.set({ outputLang });
   saveSettingsBtn.textContent = '✓ 已保存';
   setTimeout(() => { saveSettingsBtn.textContent = '保存设置'; }, 1500);
-  checkServer();
 });
 
 // Toggle settings
@@ -51,29 +45,110 @@ settingsBtn.addEventListener('click', () => {
   settingsPanel.classList.toggle('hidden');
 });
 
-// Check server health
-async function checkServer() {
-  try {
-    const res = await fetch(`${serverUrl}/global/health`, { signal: AbortSignal.timeout(3000) });
-    if (res.ok) {
-      const data = await res.json();
-      statusDot.className = 'status-dot online';
-      statusText.textContent = `v${data.version || 'online'}`;
-      return true;
+// Find or open a ChatGPT tab, navigate to new conversation
+async function findOrOpenChatGPTTab() {
+  // Search for existing chatgpt.com tabs
+  const tabs = await chrome.tabs.query({ url: ['https://chatgpt.com/*', 'https://chat.openai.com/*'] });
+
+  if (tabs.length > 0) {
+    const tab = tabs[0];
+    // Navigate to root to start a new conversation
+    await chrome.tabs.update(tab.id, { url: 'https://chatgpt.com/', active: true });
+    // Wait for the page to load
+    await waitForTabLoad(tab.id);
+    return tab.id;
+  }
+
+  // No existing tab, create one
+  const tab = await chrome.tabs.create({ url: 'https://chatgpt.com/', active: true });
+  await waitForTabLoad(tab.id);
+  return tab.id;
+}
+
+function waitForTabLoad(tabId) {
+  return new Promise((resolve) => {
+    function listener(id, changeInfo) {
+      if (id === tabId && changeInfo.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        // Extra delay for SPA hydration
+        setTimeout(resolve, 1500);
+      }
     }
-  } catch (e) {}
-  statusDot.className = 'status-dot offline';
-  statusText.textContent = 'offline';
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+// Ensure the content script is injected and ChatGPT is ready
+async function ensureChatGPTReady(tabId) {
+  // Try sending a check message; if content script isn't loaded, inject it
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, { type: 'CHATGPT_CHECK_READY' });
+    if (response && response.ready) return true;
+    if (response && !response.loggedIn) {
+      showError('请先登录 chatgpt.com，然后重试。');
+      return false;
+    }
+  } catch (e) {
+    // Content script not injected, inject it
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['chatgpt-content.js']
+      });
+      // Wait for script to initialize
+      await new Promise(r => setTimeout(r, 500));
+      const response = await chrome.tabs.sendMessage(tabId, { type: 'CHATGPT_CHECK_READY' });
+      if (response && response.ready) return true;
+      if (response && !response.loggedIn) {
+        showError('请先登录 chatgpt.com，然后重试。');
+        return false;
+      }
+    } catch (e2) {
+      showError('无法连接到 ChatGPT 页面，请刷新 chatgpt.com 后重试。');
+      return false;
+    }
+  }
+
+  showError('ChatGPT 页面未就绪，请等待页面加载完成后重试。');
   return false;
 }
 
-// Get page content
+// Check ChatGPT status for the status indicator
+async function checkChatGPTStatus() {
+  try {
+    const tabs = await chrome.tabs.query({ url: ['https://chatgpt.com/*', 'https://chat.openai.com/*'] });
+    if (tabs.length === 0) {
+      statusDot.className = 'status-dot offline';
+      statusText.textContent = '无标签页';
+      return;
+    }
+    const tab = tabs[0];
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, { type: 'CHATGPT_CHECK_READY' });
+      if (response && response.ready) {
+        statusDot.className = 'status-dot online';
+        statusText.textContent = 'ChatGPT ready';
+      } else {
+        statusDot.className = 'status-dot offline';
+        statusText.textContent = '未登录';
+      }
+    } catch (e) {
+      statusDot.className = 'status-dot offline';
+      statusText.textContent = '未连接';
+    }
+  } catch (e) {
+    statusDot.className = 'status-dot offline';
+    statusText.textContent = '检查失败';
+  }
+}
+
+// Get page content from the active tab
 async function getPageContent() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   pageTitle.textContent = tab.title || tab.url;
 
   try {
-    const result = await chrome.scripting.executeScript({
+    await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       files: ['content.js']
     });
@@ -105,7 +180,12 @@ function hideError() {
 async function summarize() {
   if (isRunning) {
     // Cancel
-    abortController?.abort();
+    if (chatgptTabId) {
+      try {
+        chrome.tabs.sendMessage(chatgptTabId, { type: 'CHATGPT_CANCEL' });
+      } catch (e) {}
+    }
+    cleanupRun();
     return;
   }
 
@@ -113,23 +193,18 @@ async function summarize() {
   const prompt = promptInput.value.trim();
   if (!prompt) return;
 
-  const online = await checkServer();
-  if (!online) {
-    showError(`无法连接到 OpenCode 服务器。\n请先运行：\n\nopencode serve --cors chrome-extension://`);
-    return;
-  }
-
   isRunning = true;
   runBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="4" y="4" width="8" height="8" fill="currentColor"/></svg> 停止`;
   spinner.classList.add('show');
   resultArea.classList.add('show');
   resultContent.innerHTML = '<span class="cursor"></span>';
-  abortController = new AbortController();
 
   let fullText = '';
+  const requestId = 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  currentRequestId = requestId;
 
   try {
-    // Get page content
+    // Get page content from active tab
     const pageData = await getPageContent();
 
     // Bilibili video: fetch subtitles from extension context
@@ -142,6 +217,7 @@ async function summarize() {
         pageData.type = 'video-subtitle';
       } else {
         showError('未能获取 B 站字幕。请确认：\n1. 已登录 B 站\n2. 该视频有 AI 字幕（播放器右下角有"字幕"按钮）');
+        cleanupRun();
         return;
       }
     }
@@ -151,115 +227,76 @@ async function summarize() {
     const contentLabel = pageData.type === 'video-subtitle' ? '视频字幕' : '网页文章内容';
     const fullPrompt = `以下是${contentLabel}：\n\n标题：${pageData.title}\n链接：${pageData.url}\n\n---\n\n${currentText}\n\n---\n\n${prompt}`;
 
-    // Step 1: Create session
-    const sessionRes = await fetch(`${serverUrl}/session`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: `Summarize: ${pageData.title?.slice(0, 40)}` }),
-      signal: abortController.signal
-    });
+    // Find or open ChatGPT tab
+    resultContent.innerHTML = '正在打开 ChatGPT...<span class="cursor"></span>';
+    chatgptTabId = await findOrOpenChatGPTTab();
 
-    if (!sessionRes.ok) throw new Error(`创建会话失败: ${sessionRes.status}`);
-    const session = await sessionRes.json();
-    const sessionId = session.id;
-
-    // Step 2: Connect to global SSE event stream
-    const eventRes = await fetch(`${serverUrl}/event`, {
-      signal: abortController.signal
-    });
-
-    // Step 3: Send message asynchronously
-    const promptRes = await fetch(`${serverUrl}/session/${sessionId}/prompt_async`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parts: [{ type: 'text', text: fullPrompt }] }),
-      signal: abortController.signal
-    });
-
-    if (!promptRes.ok && promptRes.status !== 204) {
-      throw new Error(`发送消息失败: ${promptRes.status}`);
+    // Ensure ready
+    resultContent.innerHTML = '正在连接 ChatGPT...<span class="cursor"></span>';
+    const ready = await ensureChatGPTReady(chatgptTabId);
+    if (!ready) {
+      cleanupRun();
+      return;
     }
 
-    // Step 4: Read SSE stream
-    const reader = eventRes.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let sessionDone = false;
+    // Set up message listener for streaming
+    messageListener = (msg) => {
+      if (msg.requestId !== requestId) return;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const dataStr = line.slice(6).trim();
-        if (!dataStr || dataStr === '[DONE]') continue;
-
-        try {
-          const event = JSON.parse(dataStr);
-          const props = event.properties || {};
-
-          // Filter events for our session
-          const eventSessionId = props.sessionID || props.part?.sessionID || props.info?.sessionID;
-          if (eventSessionId && eventSessionId !== sessionId) continue;
-
-          // Incremental text delta
-          if (event.type === 'message.part.delta' && props.field === 'text') {
-            fullText += props.delta;
-            resultContent.innerHTML = escapeHtml(fullText) + '<span class="cursor"></span>';
-            resultArea.scrollTop = resultArea.scrollHeight;
-          }
-
-          // Full part update (text)
-          if (event.type === 'message.part.updated') {
-            const part = props.part || props;
-            if (part.type === 'text' && part.text) {
-              fullText = part.text;
-              resultContent.innerHTML = escapeHtml(fullText) + '<span class="cursor"></span>';
-              resultArea.scrollTop = resultArea.scrollHeight;
-            }
-          }
-
-          // Session idle = done
-          if (event.type === 'session.status') {
-            if (props.status?.type === 'idle' && fullText) {
-              resultContent.innerHTML = escapeHtml(fullText);
-              sessionDone = true;
-              break;
-            }
-          }
-        } catch (e) {}
+      if (msg.type === 'CHATGPT_STREAM_DELTA') {
+        fullText = msg.text;
+        resultContent.innerHTML = escapeHtml(fullText) + '<span class="cursor"></span>';
+        resultArea.scrollTop = resultArea.scrollHeight;
       }
 
-      if (sessionDone) break;
+      if (msg.type === 'CHATGPT_STREAM_DONE') {
+        fullText = msg.text || fullText;
+        if (fullText) {
+          resultContent.innerHTML = escapeHtml(fullText);
+        } else {
+          showError('没有收到 ChatGPT 的响应，请检查 ChatGPT 页面是否正常。');
+        }
+        cleanupRun();
+      }
+
+      if (msg.type === 'CHATGPT_ERROR') {
+        showError(`ChatGPT 错误：${msg.error}`);
+        cleanupRun();
+      }
+    };
+    chrome.runtime.onMessage.addListener(messageListener);
+
+    // Submit prompt to ChatGPT
+    resultContent.innerHTML = '正在发送到 ChatGPT...<span class="cursor"></span>';
+    const submitResult = await chrome.tabs.sendMessage(chatgptTabId, {
+      type: 'CHATGPT_SUBMIT_PROMPT',
+      prompt: fullPrompt,
+      requestId
+    });
+
+    if (!submitResult || !submitResult.ok) {
+      showError(`发送失败：${submitResult?.error || '未知错误'}`);
+      cleanupRun();
+      return;
     }
 
-    // Final cleanup
-    if (fullText) {
-      resultContent.innerHTML = escapeHtml(fullText);
-    } else if (!resultContent.innerHTML || resultContent.innerHTML === '<span class="cursor"></span>') {
-      showError('没有收到响应，请检查 OpenCode 是否正常运行。');
-    }
+    resultContent.innerHTML = '等待 ChatGPT 回复...<span class="cursor"></span>';
 
   } catch (e) {
-    if (e.name === 'AbortError') {
-      if (fullText) {
-        resultContent.innerHTML = escapeHtml(fullText) + '\n\n<em style="color:var(--text-muted)">[已停止]</em>';
-      } else {
-        resultArea.classList.remove('show');
-      }
-    } else {
-      showError(`错误：${e.message}`);
-    }
-  } finally {
-    isRunning = false;
-    runBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 2l11 6-11 6V2z" fill="currentColor"/></svg> 运行`;
-    spinner.classList.remove('show');
-    abortController = null;
+    showError(`错误：${e.message}`);
+    cleanupRun();
+  }
+}
+
+function cleanupRun() {
+  isRunning = false;
+  currentRequestId = null;
+  chatgptTabId = null;
+  runBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 2l11 6-11 6V2z" fill="currentColor"/></svg> 运行`;
+  spinner.classList.remove('show');
+  if (messageListener) {
+    chrome.runtime.onMessage.removeListener(messageListener);
+    messageListener = null;
   }
 }
 
@@ -313,7 +350,7 @@ clearBtn.addEventListener('click', () => {
 });
 
 // Footer info
-footerInfo.textContent = `opencode serve --cors chrome-extension://`;
+footerInfo.textContent = '需要登录 chatgpt.com';
 
 // Fetch Bilibili subtitle from extension context (bypasses page CSP)
 async function fetchBilibiliSubtitle(pageUrl) {
@@ -382,7 +419,8 @@ async function fetchBilibiliSubtitle(pageUrl) {
 }
 
 // Init
-loadSettings().then(() => checkServer());
+loadSettings();
+checkChatGPTStatus();
 getPageContent().then(data => {
   if (data.title) pageTitle.textContent = data.title;
 });

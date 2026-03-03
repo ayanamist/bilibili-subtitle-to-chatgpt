@@ -1,16 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "OpenCode Summarizer",
-  "version": "1.0.0",
-  "description": "Summarize any webpage using your local OpenCode instance",
+  "name": "ChatGPT Summarizer",
+  "version": "2.0.0",
+  "description": "Summarize any webpage using ChatGPT",
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
-    "http://localhost/*",
-    "http://127.0.0.1/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
     "https://api.bilibili.com/*",
     "https://aisubtitle.hdslb.com/*"
   ],
@@ -25,7 +26,12 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
+      "exclude_matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
       "js": ["content.js"]
+    },
+    {
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "js": ["chatgpt-content.js"]
     }
   ],
   "icons": {

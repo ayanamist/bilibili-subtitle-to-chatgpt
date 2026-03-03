@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OpenCode Summarizer</title>
+<title>ChatGPT Summarizer</title>
 <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -13,7 +13,7 @@
   <div class="header">
     <div class="logo">
       <div class="logo-dot"></div>
-      opencode / summarize
+      chatgpt / summarize
     </div>
     <div class="header-right">
       <div class="status-badge">
@@ -31,10 +31,6 @@
 
   <!-- Settings Panel -->
   <div class="settings-panel hidden" id="settingsPanel">
-    <div class="setting-row">
-      <label>⚙ OpenCode Server URL</label>
-      <input type="text" id="serverUrl" placeholder="http://localhost:4096" />
-    </div>
     <div class="setting-row">
       <label>语言 / Language</label>
       <select id="outputLang">
@@ -105,7 +101,7 @@
 
   <!-- Footer -->
   <div class="footer">
-    <div class="footer-info" id="footerInfo">opencode serve --cors chrome-extension://</div>
+    <div class="footer-info" id="footerInfo">需要登录 chatgpt.com</div>
     <div class="copied-toast" id="copiedToast">✓ 已复制</div>
   </div>
 
