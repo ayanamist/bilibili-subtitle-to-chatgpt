@@ -88,11 +88,21 @@ async function fetchBilibiliSubtitle(pageUrl) {
     const viewData = await viewRes.json();
 
     const aid = viewData?.data?.aid;
-    const cid = viewData?.data?.cid;
-    if (!aid || !cid) {
-      console.warn('[Subtitle] Missing aid/cid from view API');
+    if (!aid) {
+      console.warn('[Subtitle] Missing aid from view API');
       return null;
     }
+
+    // Determine cid based on page number (for multi-part videos)
+    const pMatch = pageUrl.match(/[?&]p=(\d+)/);
+    const pageNum = pMatch ? parseInt(pMatch[1], 10) : 1;
+    const pages = viewData?.data?.pages;
+    const cid = pages?.[pageNum - 1]?.cid || viewData?.data?.cid;
+    if (!cid) {
+      console.warn('[Subtitle] Missing cid from view API');
+      return null;
+    }
+    console.log('[Subtitle] aid:', aid, 'cid:', cid, 'page:', pageNum);
 
     // Step 2: Get subtitle list from player API
     const playerUrl = `https://api.bilibili.com/x/player/v2?aid=${aid}&cid=${cid}`;
@@ -161,7 +171,8 @@ async function run() {
     }
 
     // Fetch subtitle
-    setStatus('正在获取字幕...');
+    const bvid = pageUrl.match(/\/video\/(BV[\w]+)/)?.[1] || '';
+    setStatus(`正在获取字幕... (${bvid})`);
     const subtitleBody = await fetchBilibiliSubtitle(pageUrl);
 
     if (!subtitleBody) {
@@ -170,7 +181,6 @@ async function run() {
     }
 
     const srtContent = subtitleToSrt(subtitleBody);
-    const bvid = pageUrl.match(/\/video\/(BV[\w]+)/)?.[1] || '';
     const title = tab.title || 'bilibili-subtitle';
     const fileName = bvid ? `${bvid}_${title}.srt` : `${title}.srt`;
 
