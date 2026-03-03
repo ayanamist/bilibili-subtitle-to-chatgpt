@@ -105,7 +105,7 @@ async function fetchBilibiliSubtitle(pageUrl) {
     console.log('[Subtitle] aid:', aid, 'cid:', cid, 'page:', pageNum);
 
     // Step 2: Get subtitle list from player API
-    const playerUrl = `https://api.bilibili.com/x/player/v2?aid=${aid}&cid=${cid}`;
+    const playerUrl = `https://api.bilibili.com/x/player/wbi/v2?aid=${aid}&cid=${cid}`;
     const playerRes = await fetch(playerUrl);
     const playerData = await playerRes.json();
 
@@ -116,7 +116,11 @@ async function fetchBilibiliSubtitle(pageUrl) {
     }
 
     // Prefer Chinese subtitle
-    const zhSub = subtitles.find(s => /zh/.test(s.lan)) || subtitles[0];
+    const zhSub = subtitles.find(s => s.lan === 'ai-zh');
+    if (!zhSub) {
+      console.warn("[Subtitle] ai-zh subtitle not found");
+      return null;
+    }
     let subtitleUrl = zhSub.subtitle_url;
     if (subtitleUrl.startsWith('//')) subtitleUrl = 'https:' + subtitleUrl;
 
