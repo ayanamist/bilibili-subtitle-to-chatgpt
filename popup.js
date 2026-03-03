@@ -170,7 +170,9 @@ async function run() {
     }
 
     const srtContent = subtitleToSrt(subtitleBody);
-    const fileName = `${tab.title || 'bilibili-subtitle'}.srt`;
+    const bvid = pageUrl.match(/\/video\/(BV[\w]+)/)?.[1] || '';
+    const title = tab.title || 'bilibili-subtitle';
+    const fileName = bvid ? `${title}_${bvid}.srt` : `${title}.srt`;
 
     // Open new ChatGPT tab
     setStatus('正在打开 ChatGPT...');
