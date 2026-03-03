@@ -19,9 +19,9 @@ function setStatus(msg) {
   statusText.textContent = msg;
 }
 
-// Always create a new ChatGPT tab
+// Create a new ChatGPT tab (inactive so popup stays open)
 async function openChatGPTTab() {
-  const tab = await chrome.tabs.create({ url: 'https://chatgpt.com/', active: true });
+  const tab = await chrome.tabs.create({ url: 'https://chatgpt.com/', active: false });
   await waitForTabLoad(tab.id);
   return tab.id;
 }
@@ -193,7 +193,8 @@ async function run() {
       return;
     }
 
-    // Done — user will see the result in ChatGPT tab
+    // Activate the ChatGPT tab now that submission is done
+    await chrome.tabs.update(chatgptTabId, { active: true });
     setStatus('已发送，请在 ChatGPT 页面查看结果。');
   } catch (e) {
     showError(`错误：${e.message}`);
