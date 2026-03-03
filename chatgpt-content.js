@@ -17,6 +17,34 @@
     return { ready: !!textarea, loggedIn: !!textarea };
   }
 
+  function inputPrompt(text) {
+    const textarea = findTextarea();
+    if (!textarea) return;
+
+    textarea.focus();
+
+    if (textarea.tagName === 'TEXTAREA') {
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype, 'value'
+      ).set;
+      nativeSetter.call(textarea, text);
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    } else {
+      // contenteditable div (ProseMirror)
+      textarea.innerHTML = '';
+      textarea.focus();
+      const success = document.execCommand('insertText', false, text);
+      if (!success || !textarea.textContent.trim()) {
+        const p = document.createElement('p');
+        p.textContent = text;
+        textarea.innerHTML = '';
+        textarea.appendChild(p);
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  }
+
   function clickSend() {
     return new Promise((resolve, reject) => {
       setTimeout(() => {
@@ -96,6 +124,9 @@
       (async () => {
         try {
           await attachFile(msg.file.name, msg.file.content);
+          if (msg.prompt) {
+            inputPrompt(msg.prompt);
+          }
           await clickSend();
           sendResponse({ ok: true });
         } catch (e) {

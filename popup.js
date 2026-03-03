@@ -184,6 +184,10 @@ async function run() {
     const title = tab.title || 'bilibili-subtitle';
     const fileName = bvid ? `${bvid}_${title}.srt` : `${title}.srt`;
 
+    // Load prompt text
+    const promptRes = await fetch(chrome.runtime.getURL('prompt.txt'));
+    const promptText = await promptRes.text();
+
     // Open new ChatGPT tab
     setStatus('正在打开 ChatGPT...');
     const chatgptTabId = await openChatGPTTab();
@@ -193,11 +197,12 @@ async function run() {
     const ready = await ensureChatGPTReady(chatgptTabId);
     if (!ready) return;
 
-    // Submit file
+    // Submit file with prompt
     setStatus('正在发送字幕文件...');
     const submitResult = await chrome.tabs.sendMessage(chatgptTabId, {
       type: 'CHATGPT_SUBMIT_PROMPT',
-      file: { name: fileName, content: srtContent }
+      file: { name: fileName, content: srtContent },
+      prompt: promptText
     });
 
     if (!submitResult || !submitResult.ok) {
