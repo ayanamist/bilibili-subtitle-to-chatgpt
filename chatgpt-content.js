@@ -201,6 +201,60 @@
     currentRequestId = null;
   }
 
+  // --- File attachment via DataTransfer ---
+
+  async function attachFile(fileName, fileContent) {
+    const file = new File([fileContent], fileName, { type: 'text/plain' });
+    const dt = new DataTransfer();
+    dt.items.add(file);
+
+    // Try hidden file input first
+    const fileInput = document.querySelector('input[type="file"]');
+    if (fileInput) {
+      fileInput.files = dt.files;
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      // Fallback: simulate drag-and-drop onto the input area
+      const dropTarget = findTextarea() || document.querySelector('main');
+      if (!dropTarget) throw new Error('找不到文件上传区域');
+
+      const dragEnter = new DragEvent('dragenter', { bubbles: true, dataTransfer: dt });
+      const dragOver = new DragEvent('dragover', { bubbles: true, dataTransfer: dt });
+      const drop = new DragEvent('drop', { bubbles: true, dataTransfer: dt });
+      dropTarget.dispatchEvent(dragEnter);
+      dropTarget.dispatchEvent(dragOver);
+      dropTarget.dispatchEvent(drop);
+    }
+
+    // Wait for the file attachment to appear in the UI
+    await waitForFileAttachment();
+  }
+
+  function waitForFileAttachment() {
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+      const maxAttempts = 30; // 15 seconds max
+      const timer = setInterval(() => {
+        attempts++;
+        // Look for file attachment indicators in the ChatGPT UI
+        const attached = document.querySelector('[data-testid*="file"]')
+          || document.querySelector('[class*="attachment"]')
+          || document.querySelector('[class*="file"]');
+        if (attached) {
+          clearInterval(timer);
+          // Extra delay for upload processing
+          setTimeout(resolve, 500);
+          return;
+        }
+        if (attempts >= maxAttempts) {
+          clearInterval(timer);
+          // Proceed anyway - the file may have been accepted without visible indicator
+          resolve();
+        }
+      }, 500);
+    });
+  }
+
   // --- Message listener ---
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -213,8 +267,15 @@
     if (msg.type === 'CHATGPT_SUBMIT_PROMPT') {
       (async () => {
         try {
-          inputPrompt(msg.prompt);
-          await clickSend();
+          if (msg.file) {
+            // File attachment flow: attach SRT file and send without prompt text
+            await attachFile(msg.file.name, msg.file.content);
+            await clickSend();
+          } else {
+            // Original prompt text flow
+            inputPrompt(msg.prompt);
+            await clickSend();
+          }
           // Wait a bit for the assistant message to start appearing
           setTimeout(() => {
             startStreaming(msg.requestId);

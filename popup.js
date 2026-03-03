@@ -191,7 +191,6 @@ async function summarize() {
 
   hideError();
   const prompt = promptInput.value.trim();
-  if (!prompt) return;
 
   isRunning = true;
   runBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="4" y="4" width="8" height="8" fill="currentColor"/></svg> 停止`;
@@ -207,25 +206,39 @@ async function summarize() {
     // Get page content from active tab
     const pageData = await getPageContent();
 
-    // Bilibili video: fetch subtitles from extension context
+    // Bilibili video: fetch subtitles and send as SRT file attachment
+    let submitMsg;
     if (pageData.type === 'bilibili-video') {
-      const subtitleResult = await fetchBilibiliSubtitle(pageData.url);
-      console.log('[Summarizer] Subtitle result length:', subtitleResult?.length || 0);
+      const subtitleBody = await fetchBilibiliSubtitle(pageData.url);
+      console.log('[Summarizer] Subtitle result lines:', subtitleBody?.length || 0);
 
-      if (subtitleResult) {
-        pageData.content = (pageData.description ? `视频简介：${pageData.description}\n\n` : '') + `字幕内容：\n${subtitleResult}`;
-        pageData.type = 'video-subtitle';
+      if (subtitleBody) {
+        const srtContent = subtitleToSrt(subtitleBody);
+        const fileName = `${pageData.title || 'bilibili-subtitle'}.srt`;
+        submitMsg = {
+          type: 'CHATGPT_SUBMIT_PROMPT',
+          file: { name: fileName, content: srtContent },
+          requestId
+        };
       } else {
         showError('未能获取 B 站字幕。请确认：\n1. 已登录 B 站\n2. 该视频有 AI 字幕（播放器右下角有"字幕"按钮）');
         cleanupRun();
         return;
       }
+    } else {
+      // Non-bilibili pages require a prompt
+      if (!prompt) {
+        cleanupRun();
+        return;
+      }
+      currentText = pageData.content;
+      const fullPrompt = `以下是网页文章内容：\n\n标题：${pageData.title}\n链接：${pageData.url}\n\n---\n\n${currentText}\n\n---\n\n${prompt}`;
+      submitMsg = {
+        type: 'CHATGPT_SUBMIT_PROMPT',
+        prompt: fullPrompt,
+        requestId
+      };
     }
-
-    currentText = pageData.content;
-
-    const contentLabel = pageData.type === 'video-subtitle' ? '视频字幕' : '网页文章内容';
-    const fullPrompt = `以下是${contentLabel}：\n\n标题：${pageData.title}\n链接：${pageData.url}\n\n---\n\n${currentText}\n\n---\n\n${prompt}`;
 
     // Find or open ChatGPT tab
     resultContent.innerHTML = '正在打开 ChatGPT...<span class="cursor"></span>';
@@ -266,13 +279,9 @@ async function summarize() {
     };
     chrome.runtime.onMessage.addListener(messageListener);
 
-    // Submit prompt to ChatGPT
+    // Submit to ChatGPT
     resultContent.innerHTML = '正在发送到 ChatGPT...<span class="cursor"></span>';
-    const submitResult = await chrome.tabs.sendMessage(chatgptTabId, {
-      type: 'CHATGPT_SUBMIT_PROMPT',
-      prompt: fullPrompt,
-      requestId
-    });
+    const submitResult = await chrome.tabs.sendMessage(chatgptTabId, submitMsg);
 
     if (!submitResult || !submitResult.ok) {
       showError(`发送失败：${submitResult?.error || '未知错误'}`);
@@ -411,11 +420,27 @@ async function fetchBilibiliSubtitle(pageUrl) {
     }
 
     console.log('[Summarizer] Got subtitle lines:', subData.body.length);
-    return subData.body.map(item => item.content).join('\n');
+    return subData.body;
   } catch (e) {
     console.error('[Summarizer] Bilibili subtitle fetch error:', e);
     return null;
   }
+}
+
+// Convert seconds to SRT time format: HH:MM:SS,mmm
+function secondsToSrtTime(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const ms = Math.round((seconds % 1) * 1000);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+}
+
+// Convert Bilibili subtitle JSON array to SRT format string
+function subtitleToSrt(body) {
+  return body.map((item, i) => {
+    return `${i + 1}\n${secondsToSrtTime(item.from)} --> ${secondsToSrtTime(item.to)}\n${item.content}`;
+  }).join('\n\n');
 }
 
 // Init
