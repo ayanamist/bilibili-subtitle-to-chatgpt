@@ -165,16 +165,16 @@ async function run() {
     const promptText = await promptRes.text();
 
     // Open new ChatGPT tab
-    setStatus('正在打开 ChatGPT...');
+    setStatus('正在打开 ChatGPT...（请勿切换标签页）');
     const chatgptTabId = await openChatGPTTab();
 
     // Ensure ready
-    setStatus('正在连接 ChatGPT...');
+    setStatus('正在连接 ChatGPT...（请勿切换标签页）');
     const ready = await ensureChatGPTReady(chatgptTabId);
     if (!ready) return;
 
     // Submit file with prompt
-    setStatus('正在发送字幕文件...');
+    setStatus('正在发送字幕文件...（请勿切换标签页）');
     const submitResult = await chrome.tabs.sendMessage(chatgptTabId, {
       type: 'CHATGPT_SUBMIT_PROMPT',
       file: { name: fileName, content: srtContent },
