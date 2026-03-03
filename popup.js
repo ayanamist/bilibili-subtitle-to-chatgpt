@@ -21,7 +21,7 @@ function setStatus(msg) {
 
 // Create a new ChatGPT tab (inactive so popup stays open)
 async function openChatGPTTab() {
-  const tab = await chrome.tabs.create({ url: 'https://chatgpt.com/', active: false });
+  const tab = await chrome.tabs.create({ url: 'https://chatgpt.com/?temporary-chat=true', active: false });
   await waitForTabLoad(tab.id);
   return tab.id;
 }
