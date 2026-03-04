@@ -1,4 +1,6 @@
 let isRunning = false;
+let cachedVideoInfo = null;  // { bvid, aid, cid }
+let cachedHasSubtitle = null; // true/false/null (null = not checked yet)
 
 // DOM
 const runBtn = document.getElementById('runBtn');
@@ -203,13 +205,13 @@ async function run() {
       return;
     }
 
-    // Get video info
+    // Get video info (use cache from init if available)
     setStatus('正在获取视频信息...');
-    const { bvid, aid, cid } = await fetchVideoInfo(pageUrl);
+    const { bvid, aid, cid } = cachedVideoInfo || await fetchVideoInfo(pageUrl);
 
-    // Try fetching subtitles first
+    // Try fetching subtitles first (use cache from init if available)
     setStatus(`正在获取字幕... (${bvid})`);
-    const subtitleBody = await fetchSubtitle(aid, cid);
+    const subtitleBody = cachedHasSubtitle === false ? null : await fetchSubtitle(aid, cid);
 
     if (subtitleBody) {
       // Subtitle flow — send to ChatGPT
@@ -278,7 +280,7 @@ async function run() {
 
 runBtn.addEventListener('click', run);
 
-// Init: check if current page is bilibili video
+// Init: check if current page is bilibili video, pre-check subtitle availability
 (async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -286,6 +288,19 @@ runBtn.addEventListener('click', run);
     if (!/bilibili\.com\/video\//.test(pageUrl)) {
       runBtn.disabled = true;
       setStatus('请在 B 站视频页面使用');
+      return;
+    }
+
+    try {
+      cachedVideoInfo = await fetchVideoInfo(pageUrl);
+      const subtitleBody = await fetchSubtitle(cachedVideoInfo.aid, cachedVideoInfo.cid);
+      cachedHasSubtitle = !!subtitleBody;
+      if (!cachedHasSubtitle) {
+        runBtn.textContent = '发送音频到 AI Studio';
+        setStatus('该视频无 AI 字幕');
+      }
+    } catch (e) {
+      // Pre-check failed, run() will retry
     }
   } catch (e) {
     // ignore
