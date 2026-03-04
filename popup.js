@@ -20,8 +20,8 @@ function setStatus(msg) {
 }
 
 // Create a new ChatGPT tab (inactive so popup stays open)
-async function openChatGPTTab() {
-  const tab = await chrome.tabs.create({ url: 'https://chatgpt.com/?temporary-chat=true', active: false });
+async function openChatGPTTab(openerIndex) {
+  const tab = await chrome.tabs.create({ url: 'https://chatgpt.com/?temporary-chat=true', active: false, index: openerIndex + 1 });
   await waitForTabLoad(tab.id);
   return tab.id;
 }
@@ -166,7 +166,7 @@ async function run() {
 
     // Open new ChatGPT tab
     setStatus('正在打开 ChatGPT...（请勿切换标签页）');
-    const chatgptTabId = await openChatGPTTab();
+    const chatgptTabId = await openChatGPTTab(tab.index);
 
     // Ensure ready
     setStatus('正在连接 ChatGPT...（请勿切换标签页）');
