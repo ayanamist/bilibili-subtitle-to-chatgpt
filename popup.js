@@ -170,7 +170,7 @@ async function fetchSubtitle(aid, cid) {
   }
 
   // Prefer Chinese AI subtitle
-  const zhSub = subtitles.find(s => s.lan === 'ai-zh');
+  const zhSub = subtitles.find(s => /zh/.test(s.lan));
   if (!zhSub) {
     return null;
   }
@@ -185,7 +185,7 @@ async function fetchSubtitle(aid, cid) {
     return null;
   }
 
-  return subData.body;
+  return { body: subData.body, lan: zhSub.lan };
 }
 
 // Fetch the smallest audio stream URL from playurl API
@@ -238,17 +238,17 @@ async function run() {
     const { bvid, aid, cid } = cachedVideoInfo || await fetchVideoInfo(pageUrl);
 
     // Try fetching subtitles (skip if forced to use AI Studio)
-    let subtitleBody = null;
+    let subtitle = null;
     if (!forceAIStudioCheckbox.checked) {
       setStatus(`正在获取字幕... (${bvid})`);
-      subtitleBody = cachedHasSubtitle === false ? null : await fetchSubtitle(aid, cid);
+      subtitle = cachedHasSubtitle === false ? null : await fetchSubtitle(aid, cid);
     }
 
-    const useAIStudio = forceAIStudioCheckbox.checked || !subtitleBody;
+    const useAIStudio = forceAIStudioCheckbox.checked || !subtitle;
 
-    if (subtitleBody && !useAIStudio) {
+    if (subtitle && !useAIStudio) {
       // Subtitle flow — send to ChatGPT
-      const srtContent = subtitleToSrt(subtitleBody);
+      const srtContent = subtitleToSrt(subtitle.body);
       const title = tab.title || 'bilibili-subtitle';
       const fileName = bvid ? `${bvid}_${title}.srt` : `${title}.srt`;
 
@@ -324,13 +324,14 @@ runBtn.addEventListener('click', run);
 
     try {
       cachedVideoInfo = await fetchVideoInfo(pageUrl);
-      const subtitleBody = await fetchSubtitle(cachedVideoInfo.aid, cachedVideoInfo.cid);
-      cachedHasSubtitle = !!subtitleBody;
+      const subtitle = await fetchSubtitle(cachedVideoInfo.aid, cachedVideoInfo.cid);
+      cachedHasSubtitle = !!subtitle;
       updateRunBtnText();
       if (cachedHasSubtitle) {
         document.getElementById('forceAIStudioLabel').style.display = '';
+        setStatus(`发现 ${subtitle.lan} 字幕 `);
       } else {
-        setStatus('该视频无 AI 字幕');
+        setStatus('未发现中文字幕');
       }
     } catch (e) {
       // Pre-check failed, run() will retry
