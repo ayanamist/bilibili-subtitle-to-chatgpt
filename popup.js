@@ -4,6 +4,15 @@ let isRunning = false;
 const runBtn = document.getElementById('runBtn');
 const errorBox = document.getElementById('errorBox');
 const statusText = document.getElementById('statusText');
+const tempChatCheckbox = document.getElementById('tempChatCheckbox');
+
+// Restore checkbox state from localStorage (synchronous, no flicker)
+tempChatCheckbox.checked = localStorage.getItem('tempChat') !== 'false';
+
+// Save checkbox state on change
+tempChatCheckbox.addEventListener('change', () => {
+  localStorage.setItem('tempChat', tempChatCheckbox.checked);
+});
 
 // Show/hide error
 function showError(msg) {
@@ -21,7 +30,11 @@ function setStatus(msg) {
 
 // Create a new ChatGPT tab (inactive so popup stays open)
 async function openChatGPTTab(openerIndex) {
-  const tab = await chrome.tabs.create({ url: 'https://chatgpt.com/?temporary-chat=true', active: false, index: openerIndex + 1 });
+  let url = 'https://chatgpt.com/';
+  if (tempChatCheckbox.checked) {
+    url += '?temporary-chat=true';
+  }
+  const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1 });
   await waitForTabLoad(tab.id);
   return tab.id;
 }

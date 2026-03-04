@@ -62,7 +62,7 @@
           clearInterval(timer);
           reject(new Error('发送按钮超时未就绪'));
         }
-      }, 500);
+      }, 200);
     });
   }
 
@@ -101,14 +101,14 @@
           || document.querySelector('[class*="file"]');
         if (attached) {
           clearInterval(timer);
-          setTimeout(resolve, 500);
+          setTimeout(resolve, 200);
           return;
         }
         if (attempts >= maxAttempts) {
           clearInterval(timer);
           resolve();
         }
-      }, 500);
+      }, 200);
     });
   }
 

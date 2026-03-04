@@ -37,6 +37,25 @@ html, body {
   gap: 6px;
 }
 
+/* Option area */
+.option-area {
+  padding: 6px 12px 0;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
 /* Run button */
 .run-btn {
   background: var(--accent);
