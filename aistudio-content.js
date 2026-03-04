@@ -125,9 +125,20 @@
     throw new Error('Run button not found or not enabled');
   }
 
+  // --- Enable temporary chat if needed ---
+
+  function enableTempChat() {
+    const btn = document.querySelector('button[aria-label="Temporary chat toggle"]');
+    if (!btn) return;
+    if (!btn.classList.contains('ms-button-active')) {
+      btn.click();
+    }
+  }
+
   // --- Main handler ---
 
-  async function handleUploadAndRun(audioUrls, prompt) {
+  async function handleUploadAndRun(audioUrls, prompt, tempChat) {
+    if (tempChat) enableTempChat();
     showStatus('正在下载音频...');
     const audioBuffer = await downloadAudio(audioUrls);
 
@@ -167,7 +178,7 @@
       sendResponse({ ok: true });
       (async () => {
         try {
-          await handleUploadAndRun(msg.audioUrls, msg.prompt);
+          await handleUploadAndRun(msg.audioUrls, msg.prompt, msg.tempChat);
         } catch (e) {
           console.error('AISTUDIO_UPLOAD_AND_RUN failed:', e);
           showError(`错误：${e.message}`);

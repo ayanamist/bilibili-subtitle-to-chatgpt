@@ -261,7 +261,8 @@ async function run() {
       await chrome.tabs.sendMessage(aiStudioTabId, {
         type: 'AISTUDIO_UPLOAD_AND_RUN',
         audioUrls,
-        prompt: promptText
+        prompt: promptText,
+        tempChat: tempChatCheckbox.checked
       });
 
       await chrome.tabs.update(aiStudioTabId, { active: true });
