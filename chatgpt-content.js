@@ -118,7 +118,9 @@
       return;
     }
 
-    if (msg.type === 'CHATGPT_SUBMIT_PROMPT') {
+    if (msg.type === 'CHATGPT_PREPARE_PROMPT') {
+      // Reply immediately so popup can switch tab without waiting
+      sendResponse({ ok: true });
       (async () => {
         try {
           await attachFile(msg.file.name, msg.file.content);
@@ -126,12 +128,11 @@
             inputPrompt(msg.prompt);
           }
           await clickSend();
-          sendResponse({ ok: true });
         } catch (e) {
-          sendResponse({ ok: false, error: e.message });
+          console.error('CHATGPT_PREPARE_PROMPT failed:', e);
         }
       })();
-      return true; // async response
+      return;
     }
   });
 })();

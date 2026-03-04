@@ -173,22 +173,18 @@ async function run() {
     const ready = await ensureChatGPTReady(chatgptTabId);
     if (!ready) return;
 
-    // Submit file with prompt
-    setStatus('正在发送字幕文件...（请勿切换标签页）');
-    const submitResult = await chrome.tabs.sendMessage(chatgptTabId, {
-      type: 'CHATGPT_SUBMIT_PROMPT',
+    // Send file data to content script, then switch to ChatGPT tab
+    // The content script will handle file upload and prompt input visibly
+    setStatus('正在发送字幕文件...');
+    await chrome.tabs.sendMessage(chatgptTabId, {
+      type: 'CHATGPT_PREPARE_PROMPT',
       file: { name: fileName, content: srtContent },
       prompt: promptText
     });
 
-    if (!submitResult || !submitResult.ok) {
-      showError(`发送失败：${submitResult?.error || '未知错误'}`);
-      return;
-    }
-
-    // Activate the ChatGPT tab now that submission is done
+    // Switch to ChatGPT tab immediately; upload and prompt happen there
     await chrome.tabs.update(chatgptTabId, { active: true });
-    setStatus('已发送，请在 ChatGPT 页面查看结果。');
+    setStatus('已切换到 ChatGPT 页面。');
   } catch (e) {
     showError(`错误：${e.message}`);
   } finally {
