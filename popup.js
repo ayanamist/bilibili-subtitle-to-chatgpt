@@ -7,14 +7,32 @@ const runBtn = document.getElementById('runBtn');
 const errorBox = document.getElementById('errorBox');
 const statusText = document.getElementById('statusText');
 const tempChatCheckbox = document.getElementById('tempChatCheckbox');
+const forceAIStudioCheckbox = document.getElementById('forceAIStudioCheckbox');
 
 // Restore checkbox state from localStorage (synchronous, no flicker)
 tempChatCheckbox.checked = localStorage.getItem('tempChat') !== 'false';
+forceAIStudioCheckbox.checked = localStorage.getItem('forceAIStudio') === 'true';
 
 // Save checkbox state on change
 tempChatCheckbox.addEventListener('change', () => {
   localStorage.setItem('tempChat', tempChatCheckbox.checked);
 });
+
+function updateRunBtnText() {
+  if (cachedHasSubtitle === false || forceAIStudioCheckbox.checked) {
+    runBtn.textContent = '发送音频到 AI Studio';
+  } else {
+    runBtn.textContent = '发送字幕到 ChatGPT';
+  }
+}
+
+forceAIStudioCheckbox.addEventListener('change', () => {
+  localStorage.setItem('forceAIStudio', forceAIStudioCheckbox.checked);
+  updateRunBtnText();
+});
+
+// Set initial button text based on restored checkbox state
+updateRunBtnText();
 
 // Show/hide error
 function showError(msg) {
@@ -209,11 +227,16 @@ async function run() {
     setStatus('正在获取视频信息...');
     const { bvid, aid, cid } = cachedVideoInfo || await fetchVideoInfo(pageUrl);
 
-    // Try fetching subtitles first (use cache from init if available)
-    setStatus(`正在获取字幕... (${bvid})`);
-    const subtitleBody = cachedHasSubtitle === false ? null : await fetchSubtitle(aid, cid);
+    // Try fetching subtitles (skip if forced to use AI Studio)
+    let subtitleBody = null;
+    if (!forceAIStudioCheckbox.checked) {
+      setStatus(`正在获取字幕... (${bvid})`);
+      subtitleBody = cachedHasSubtitle === false ? null : await fetchSubtitle(aid, cid);
+    }
 
-    if (subtitleBody) {
+    const useAIStudio = forceAIStudioCheckbox.checked || !subtitleBody;
+
+    if (subtitleBody && !useAIStudio) {
       // Subtitle flow — send to ChatGPT
       const srtContent = subtitleToSrt(subtitleBody);
       const title = tab.title || 'bilibili-subtitle';
@@ -244,8 +267,8 @@ async function run() {
       await chrome.tabs.update(chatgptTabId, { active: true });
       setStatus('已切换到 ChatGPT 页面。');
     } else {
-      // Audio fallback — send to AI Studio
-      setStatus('该视频无字幕，正在获取音频信息...');
+      // Audio fallback or forced AI Studio
+      setStatus('正在获取音频信息...');
       const audioUrls = await fetchSmallestAudioUrl(aid, cid);
 
       setStatus('正在打开 AI Studio...（请勿切换标签页）');
@@ -295,8 +318,10 @@ runBtn.addEventListener('click', run);
       cachedVideoInfo = await fetchVideoInfo(pageUrl);
       const subtitleBody = await fetchSubtitle(cachedVideoInfo.aid, cachedVideoInfo.cid);
       cachedHasSubtitle = !!subtitleBody;
-      if (!cachedHasSubtitle) {
-        runBtn.textContent = '发送音频到 AI Studio';
+      updateRunBtnText();
+      if (cachedHasSubtitle) {
+        document.getElementById('forceAIStudioLabel').style.display = '';
+      } else {
         setStatus('该视频无 AI 字幕');
       }
     } catch (e) {
