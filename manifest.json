@@ -11,7 +11,10 @@
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
     "https://api.bilibili.com/*",
-    "https://aisubtitle.hdslb.com/*"
+    "https://aisubtitle.hdslb.com/*",
+    "https://aistudio.google.com/*",
+    "https://*.bilivideo.com/*",
+    "https://*.bilivideo.cn/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -25,6 +28,10 @@
     {
       "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
       "js": ["chatgpt-content.js"]
+    },
+    {
+      "matches": ["https://aistudio.google.com/*"],
+      "js": ["aistudio-content.js"]
     }
   ],
   "icons": {

@@ -39,6 +39,14 @@ async function openChatGPTTab(openerIndex) {
   return tab.id;
 }
 
+// Create a new AI Studio tab (inactive so popup stays open)
+async function openAIStudioTab(openerIndex) {
+  const url = 'https://aistudio.google.com/prompts/new_chat';
+  const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1 });
+  await waitForTabLoad(tab.id);
+  return tab.id;
+}
+
 function waitForTabLoad(tabId) {
   return new Promise((resolve) => {
     function listener(id, changeInfo) {
@@ -73,15 +81,32 @@ async function ensureChatGPTReady(tabId) {
   return false;
 }
 
-// Fetch Bilibili subtitle from extension context (bypasses page CSP)
-async function fetchBilibiliSubtitle(pageUrl) {
+// Ensure the content script is injected and AI Studio is ready
+async function ensureAIStudioReady(tabId) {
+  const maxAttempts = 10;
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, { type: 'AISTUDIO_CHECK_READY' });
+      if (response && response.ready) return true;
+    } catch (e) {
+      // Content script not yet initialized, retry
+    }
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  showError('无法连接到 AI Studio 页面，请确保已登录 aistudio.google.com 后重试。');
+  return false;
+}
+
+// Fetch video info (bvid, aid, cid) from Bilibili
+async function fetchVideoInfo(pageUrl) {
   const bvMatch = pageUrl.match(/\/video\/(BV[\w]+)/);
   if (!bvMatch) {
     throw new Error('URL 中未找到 BV 号');
   }
   const bvid = bvMatch[1];
 
-  // Step 1: Get aid and cid from view API
+  // Get aid and cid from view API
   const viewUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
   const viewRes = await fetch(viewUrl);
   const viewData = await viewRes.json();
@@ -100,34 +125,48 @@ async function fetchBilibiliSubtitle(pageUrl) {
     throw new Error(`未找到第 ${pageNum} P 的视频信息`);
   }
 
-  // Step 2: Get subtitle list from player API
+  return { bvid, aid, cid };
+}
+
+// Fetch subtitle for given aid/cid, returns subtitle body or null
+async function fetchSubtitle(aid, cid) {
   const playerUrl = `https://api.bilibili.com/x/player/wbi/v2?aid=${aid}&cid=${cid}`;
   const playerRes = await fetch(playerUrl);
   const playerData = await playerRes.json();
 
   const subtitles = playerData?.data?.subtitle?.subtitles;
   if (!subtitles || subtitles.length === 0) {
-    throw new Error('该视频没有字幕（需要视频有 AI 字幕）');
+    return null;
   }
 
-  // Prefer Chinese subtitle
+  // Prefer Chinese AI subtitle
   const zhSub = subtitles.find(s => s.lan === 'ai-zh');
   if (!zhSub) {
-    const available = subtitles.map(s => `${s.lan}(${s.lan_doc})`).join(', ');
-    throw new Error(`未找到 AI 中文字幕，可用字幕: ${available}`);
+    return null;
   }
+
   let subtitleUrl = zhSub.subtitle_url;
   if (subtitleUrl.startsWith('//')) subtitleUrl = 'https:' + subtitleUrl;
 
-  // Step 3: Fetch subtitle content
   const subRes = await fetch(subtitleUrl);
   const subData = await subRes.json();
 
   if (!subData?.body || subData.body.length === 0) {
-    throw new Error('字幕内容为空');
+    return null;
   }
 
   return subData.body;
+}
+
+// Fetch the smallest audio stream URL from playurl API
+async function fetchSmallestAudioUrl(aid, cid) {
+  const url = `https://api.bilibili.com/x/player/wbi/playurl?avid=${aid}&cid=${cid}&qn=32&fnver=0&fnval=4048&fourk=1`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.code !== 0) throw new Error(`playurl API error: ${data.message}`);
+  const audio = data.data.dash.audio;
+  const smallest = audio.reduce((min, a) => a.bandwidth < min.bandwidth ? a : min);
+  return { baseUrl: smallest.baseUrl, backupUrl: smallest.backupUrl?.[0] };
 }
 
 // Convert seconds to SRT time format: HH:MM:SS,mmm
@@ -164,40 +203,70 @@ async function run() {
       return;
     }
 
-    // Fetch subtitle
-    const bvid = pageUrl.match(/\/video\/(BV[\w]+)/)?.[1] || '';
+    // Get video info
+    setStatus('正在获取视频信息...');
+    const { bvid, aid, cid } = await fetchVideoInfo(pageUrl);
+
+    // Try fetching subtitles first
     setStatus(`正在获取字幕... (${bvid})`);
-    const subtitleBody = await fetchBilibiliSubtitle(pageUrl);
+    const subtitleBody = await fetchSubtitle(aid, cid);
 
-    const srtContent = subtitleToSrt(subtitleBody);
-    const title = tab.title || 'bilibili-subtitle';
-    const fileName = bvid ? `${bvid}_${title}.srt` : `${title}.srt`;
+    if (subtitleBody) {
+      // Subtitle flow — send to ChatGPT
+      const srtContent = subtitleToSrt(subtitleBody);
+      const title = tab.title || 'bilibili-subtitle';
+      const fileName = bvid ? `${bvid}_${title}.srt` : `${title}.srt`;
 
-    // Load prompt text
-    const promptRes = await fetch(chrome.runtime.getURL('prompt.txt'));
-    const promptText = await promptRes.text();
+      // Load prompt text
+      const promptRes = await fetch(chrome.runtime.getURL('prompt.txt'));
+      const promptText = await promptRes.text();
 
-    // Open new ChatGPT tab
-    setStatus('正在打开 ChatGPT...（请勿切换标签页）');
-    const chatgptTabId = await openChatGPTTab(tab.index);
+      // Open new ChatGPT tab
+      setStatus('正在打开 ChatGPT...（请勿切换标签页）');
+      const chatgptTabId = await openChatGPTTab(tab.index);
 
-    // Ensure ready
-    setStatus('正在连接 ChatGPT...（请勿切换标签页）');
-    const ready = await ensureChatGPTReady(chatgptTabId);
-    if (!ready) return;
+      // Ensure ready
+      setStatus('正在连接 ChatGPT...（请勿切换标签页）');
+      const ready = await ensureChatGPTReady(chatgptTabId);
+      if (!ready) return;
 
-    // Send file data to content script, then switch to ChatGPT tab
-    // The content script will handle file upload and prompt input visibly
-    setStatus('正在发送字幕文件...');
-    await chrome.tabs.sendMessage(chatgptTabId, {
-      type: 'CHATGPT_PREPARE_PROMPT',
-      file: { name: fileName, content: srtContent },
-      prompt: promptText
-    });
+      // Send file data to content script
+      setStatus('正在发送字幕文件...');
+      await chrome.tabs.sendMessage(chatgptTabId, {
+        type: 'CHATGPT_PREPARE_PROMPT',
+        file: { name: fileName, content: srtContent },
+        prompt: promptText
+      });
 
-    // Switch to ChatGPT tab immediately; upload and prompt happen there
-    await chrome.tabs.update(chatgptTabId, { active: true });
-    setStatus('已切换到 ChatGPT 页面。');
+      // Switch to ChatGPT tab
+      await chrome.tabs.update(chatgptTabId, { active: true });
+      setStatus('已切换到 ChatGPT 页面。');
+    } else {
+      // Audio fallback — send to AI Studio
+      setStatus('该视频无字幕，正在获取音频信息...');
+      const audioUrls = await fetchSmallestAudioUrl(aid, cid);
+
+      setStatus('正在打开 AI Studio...（请勿切换标签页）');
+      const aiStudioTabId = await openAIStudioTab(tab.index);
+
+      setStatus('正在连接 AI Studio...（请勿切换标签页）');
+      const ready = await ensureAIStudioReady(aiStudioTabId);
+      if (!ready) return;
+
+      // Load prompt text
+      const promptRes = await fetch(chrome.runtime.getURL('prompt.txt'));
+      const promptText = await promptRes.text();
+
+      setStatus('正在发送音频到 AI Studio...');
+      await chrome.tabs.sendMessage(aiStudioTabId, {
+        type: 'AISTUDIO_UPLOAD_AND_RUN',
+        audioUrls,
+        prompt: promptText
+      });
+
+      await chrome.tabs.update(aiStudioTabId, { active: true });
+      setStatus('已切换到 AI Studio 页面。');
+    }
   } catch (e) {
     showError(`错误：${e.message}`);
   } finally {
