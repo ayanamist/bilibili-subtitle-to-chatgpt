@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设置 - B站字幕提取</title>
+<link rel="stylesheet" href="popup.css">
+<style>
+html, body {
+  width: 100%;
+  min-height: 100vh;
+}
+.container {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px;
+  gap: 12px;
+}
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.prompt-area {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.prompt-textarea {
+  width: 100%;
+  min-height: 320px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--surface);
+  resize: vertical;
+}
+.prompt-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.btn-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.save-btn {
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius);
+  color: #ffffff;
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 20px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.save-btn:hover { opacity: 0.9; }
+.reset-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  padding: 8px 20px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.reset-btn:hover { opacity: 0.7; }
+.save-status {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.save-status.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="section-title">自定义提示词</div>
+  <div class="prompt-area">
+    <textarea class="prompt-textarea" id="promptTextarea"></textarea>
+    <div class="btn-row">
+      <button class="save-btn" id="saveBtn">保存</button>
+      <button class="reset-btn" id="resetBtn">恢复默认</button>
+      <span class="save-status" id="saveStatus">已保存</span>
+    </div>
+  </div>
+</div>
+<script src="options.js"></script>
+</body>
+</html>

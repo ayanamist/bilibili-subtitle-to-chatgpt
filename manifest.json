@@ -5,7 +5,8 @@
   "description": "提取 B 站视频字幕并发送到 ChatGPT",
   "permissions": [
     "activeTab",
-    "tabs"
+    "tabs",
+    "storage"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
@@ -34,6 +35,10 @@
       "js": ["aistudio-content.js"]
     }
   ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

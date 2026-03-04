@@ -34,6 +34,16 @@ forceAIStudioCheckbox.addEventListener('change', () => {
 // Set initial button text based on restored checkbox state
 updateRunBtnText();
 
+// Load prompt: use custom prompt from storage, fallback to built-in prompt.txt
+async function loadPrompt() {
+  const result = await chrome.storage.local.get('customPrompt');
+  if (result.customPrompt != null) {
+    return result.customPrompt;
+  }
+  const res = await fetch(chrome.runtime.getURL('prompt.txt'));
+  return res.text();
+}
+
 // Show/hide error
 function showError(msg) {
   errorBox.textContent = msg;
@@ -243,8 +253,7 @@ async function run() {
       const fileName = bvid ? `${bvid}_${title}.srt` : `${title}.srt`;
 
       // Load prompt text
-      const promptRes = await fetch(chrome.runtime.getURL('prompt.txt'));
-      const promptText = await promptRes.text();
+      const promptText = await loadPrompt();
 
       // Open new ChatGPT tab
       setStatus('正在打开 ChatGPT...（请勿切换标签页）');
@@ -279,8 +288,7 @@ async function run() {
       if (!ready) return;
 
       // Load prompt text
-      const promptRes = await fetch(chrome.runtime.getURL('prompt.txt'));
-      const promptText = await promptRes.text();
+      const promptText = await loadPrompt();
 
       setStatus('正在发送音频到 AI Studio...');
       await chrome.tabs.sendMessage(aiStudioTabId, {
