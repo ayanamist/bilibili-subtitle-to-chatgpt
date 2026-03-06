@@ -1,27 +1,5 @@
 // AI Studio page content script: drop audio file, type prompt, click Run
 (() => {
-  // --- Audio download ---
-
-  async function downloadAudio({ baseUrl, backupUrl }) {
-    for (const url of [baseUrl, backupUrl].filter(Boolean)) {
-      try {
-        console.log('[bili-content] Downloading audio from:', url.slice(0, 80) + '...');
-        const res = await fetch(url, {
-          headers: { 'Referer': 'https://www.bilibili.com/' }
-        });
-        console.log('[bili-content] Audio download status:', res.status);
-        if (res.ok) {
-          const buf = await res.arrayBuffer();
-          console.log('[bili-content] Audio downloaded, size:', buf.byteLength);
-          return buf;
-        }
-      } catch (e) {
-        console.warn('[bili-content] Audio download error:', e.message);
-      }
-    }
-    throw new Error('音频下载失败');
-  }
-
   // --- Status overlay ---
 
   let statusOverlay = null;
@@ -137,12 +115,8 @@
 
   // --- Main handler ---
 
-  async function handleUploadAndRun(audioUrls, prompt, tempChat) {
+  async function handleUploadAndRun(audioBuffer, fileName, prompt, tempChat) {
     if (tempChat) enableTempChat();
-    showStatus('正在下载音频...');
-    const audioBuffer = await downloadAudio(audioUrls);
-
-    const fileName = `bili_audio_${crypto.randomUUID().slice(0, 8)}.m4s`;
 
     showStatus('正在上传音频...');
     await dropAudioFile(audioBuffer, fileName);
@@ -178,7 +152,8 @@
       sendResponse({ ok: true });
       (async () => {
         try {
-          await handleUploadAndRun(msg.audioUrls, msg.prompt, msg.tempChat);
+          const fileName = `bili_audio_${crypto.randomUUID().slice(0, 8)}.m4s`;
+          await handleUploadAndRun(msg.audioBuffer, fileName, msg.prompt, msg.tempChat);
         } catch (e) {
           console.error('AISTUDIO_UPLOAD_AND_RUN failed:', e);
           showError(`错误：${e.message}`);

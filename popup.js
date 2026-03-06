@@ -177,7 +177,7 @@ async function run() {
     // Try fetching subtitles (skip if forced to use AI Studio)
     let subtitle = null;
     if (!forceAIStudioCheckbox.checked) {
-      setStatus(`正在获取字幕... (${bvid})`);
+      setStatus(`正在检测字幕... (${bvid})`);
       subtitle = cachedHasSubtitle === false ? null : await fetchSubtitle(aid, cid);
     }
 
@@ -227,7 +227,7 @@ async function run() {
       });
     } else {
       // Audio fallback or forced AI Studio
-      setStatus('正在获取音频信息...');
+      setStatus('正在获取音频 URL...');
       const audioUrls = await fetchSmallestAudioUrl(aid, cid);
 
       port.postMessage({

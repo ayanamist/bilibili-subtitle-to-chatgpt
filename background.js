@@ -45,6 +45,27 @@ function overlayMsg(tabId, msg) {
   chrome.tabs.sendMessage(tabId, msg).catch(() => {});
 }
 
+// Download audio from Bilibili CDN in the service worker context
+async function downloadAudio(audioUrls) {
+  const urls = [audioUrls.baseUrl, audioUrls.backupUrl].filter(Boolean);
+  const errors = [];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'Referer': 'https://www.bilibili.com/' }
+      });
+      if (res.ok) {
+        const buf = await res.arrayBuffer();
+        return buf;
+      }
+      errors.push(`HTTP ${res.status} ${res.statusText} (${new URL(url).hostname})`);
+    } catch (e) {
+      errors.push(`${e.message} (${new URL(url).hostname})`);
+    }
+  }
+  throw new Error(`音频下载失败：${errors.join('；')}`);
+}
+
 // Main task handler — runs in the service worker, independent of popup lifecycle
 async function handleTask(msg, notify) {
   const { taskType, openerTabIndex, bgOpen, tempChat, file, audioUrls, prompt } = msg;
@@ -82,6 +103,10 @@ async function handleTask(msg, notify) {
       notify('DONE', bgOpen ? '已在后台打开 ChatGPT 页面。' : '已切换到 ChatGPT 页面。');
 
     } else if (taskType === 'aistudio') {
+      // Download audio in the background before opening AI Studio
+      notify('STATUS', '正在下载音频...');
+      const audioBuffer = await downloadAudio(audioUrls);
+
       notify('STATUS', '正在打开 AI Studio...');
       const tab = await chrome.tabs.create({
         url: 'https://aistudio.google.com/prompts/new_chat',
@@ -104,7 +129,7 @@ async function handleTask(msg, notify) {
       notify('STATUS', '正在发送音频到 AI Studio...');
       await chrome.tabs.sendMessage(targetTabId, {
         type: 'AISTUDIO_UPLOAD_AND_RUN',
-        audioUrls,
+        audioBuffer,
         prompt,
         tempChat,
       });
