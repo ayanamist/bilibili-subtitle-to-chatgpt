@@ -197,9 +197,16 @@
         }
       }
       sc.addEventListener('scroll', onScroll);
+      setTimeout(() => {
+        if (!done) {
+          done = true;
+          sc.removeEventListener('scroll', onScroll);
+        }
+      }, 60000);
     });
 
     mo.observe(document.querySelector('main') || document.body, { childList: true, subtree: true });
+    setTimeout(() => mo.disconnect(), 60000);
   }
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

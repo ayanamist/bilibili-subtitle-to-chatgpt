@@ -1,9 +1,13 @@
 'use strict';
 
+// Track the active download's requestId to filter spurious progress messages.
+let _activeRequestId = null;
+
 // Forward download progress from MAIN world to background service worker.
 window.addEventListener('message', (event) => {
   if (event.source !== window || !event.data) return;
   if (event.data.type !== 'BILIBILI_FETCH_PROGRESS') return;
+  if (_activeRequestId && event.data.requestId !== _activeRequestId) return;
   chrome.runtime.sendMessage({
     type: 'BILIBILI_FETCH_PROGRESS',
     loaded: event.data.loaded,
@@ -17,11 +21,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type !== 'BILIBILI_FETCH_AUDIO') return false;
 
   const requestId = crypto.randomUUID();
+  _activeRequestId = requestId;
 
   const handler = (event) => {
     if (event.source !== window || !event.data) return;
     if (event.data.type !== 'BILIBILI_FETCH_RESULT' || event.data.requestId !== requestId) return;
     window.removeEventListener('message', handler);
+    _activeRequestId = null;
     sendResponse(event.data.result);
   };
   window.addEventListener('message', handler);

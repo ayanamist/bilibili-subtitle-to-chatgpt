@@ -138,6 +138,7 @@ async function fetchSmallestAudioUrl(aid, cid) {
   const smallest = audio.reduce((min, a) => a.bandwidth < min.bandwidth ? a : min);
   return { baseUrl: smallest.baseUrl, backupUrl: smallest.backupUrl?.[0] };
 }
+
 // Convert seconds to SRT time format: HH:MM:SS,mmm
 function secondsToSrtTime(seconds) {
   const h = Math.floor(seconds / 3600);
@@ -206,6 +207,7 @@ async function run() {
 
     port.onDisconnect.addListener(() => {
       if (isRunning) {
+        showError('后台任务连接已断开，请重试。');
         isRunning = false;
         runBtn.disabled = false;
       }

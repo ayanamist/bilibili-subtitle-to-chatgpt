@@ -1,11 +1,16 @@
 'use strict';
 
 // Wait for a tab to fully load (status=complete) + extra SPA hydration delay
-function waitForTabLoad(tabId) {
-  return new Promise((resolve) => {
+function waitForTabLoad(tabId, timeout = 30000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error('页面加载超时'));
+    }, timeout);
     function listener(id, changeInfo) {
       if (id === tabId && changeInfo.status === 'complete') {
         chrome.tabs.onUpdated.removeListener(listener);
+        clearTimeout(timer);
         setTimeout(resolve, 1500);
       }
     }
@@ -14,17 +19,18 @@ function waitForTabLoad(tabId) {
 }
 
 // Poll until ChatGPT content script reports ready
+// Returns 'ready' | 'not-logged-in' | 'timeout'
 async function ensureChatGPTReady(tabId) {
   const maxAttempts = 10;
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const response = await chrome.tabs.sendMessage(tabId, { type: 'CHATGPT_CHECK_READY' });
-      if (response && response.ready) return true;
-      if (response && !response.loggedIn) return false;
+      if (response && response.ready) return 'ready';
+      if (response && !response.loggedIn) return 'not-logged-in';
     } catch (e) {}
     await new Promise(r => setTimeout(r, 500));
   }
-  return false;
+  return 'timeout';
 }
 
 // Poll until AI Studio content script reports ready
@@ -46,12 +52,16 @@ function overlayMsg(tabId, msg) {
 }
 
 // Receive download progress from bilibili-content.js and forward to popup.
-let _progressNotify = null;
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type !== 'BILIBILI_FETCH_PROGRESS' || !_progressNotify) return;
+// Keyed by biliTabId to support concurrent tasks.
+const _progressNotifyMap = new Map();
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (msg.type !== 'BILIBILI_FETCH_PROGRESS') return;
+  const tabId = sender.tab?.id;
+  const notify = tabId != null && _progressNotifyMap.get(tabId);
+  if (!notify) return;
   const loadedMB = (msg.loaded / 1024 / 1024).toFixed(1);
   const totalStr = msg.total ? ` / ${(msg.total / 1024 / 1024).toFixed(1)} MB` : '';
-  _progressNotify('STATUS', `正在下载音频... ${loadedMB} MB${totalStr}`);
+  notify('STATUS', `正在下载音频... ${loadedMB} MB${totalStr}`);
 });
 
 // Download audio by messaging the Bilibili tab's MAIN-world content script.
@@ -81,9 +91,11 @@ async function handleTask(msg, notify) {
 
       notify('STATUS', '正在连接 ChatGPT...');
       overlayMsg(targetTabId, { type: 'EXT_STATUS', text: '正在连接 ChatGPT...' });
-      const ready = await ensureChatGPTReady(targetTabId);
-      if (!ready) {
-        const errMsg = '无法连接到 ChatGPT，请先登录 chatgpt.com 后重试。';
+      const readyResult = await ensureChatGPTReady(targetTabId);
+      if (readyResult !== 'ready') {
+        const errMsg = readyResult === 'not-logged-in'
+          ? '请先登录 chatgpt.com，然后重试。'
+          : '无法连接到 ChatGPT 页面，请刷新 chatgpt.com 后重试。';
         notify('ERROR', errMsg);
         overlayMsg(targetTabId, { type: 'EXT_ERROR', text: errMsg });
         return;
@@ -102,12 +114,12 @@ async function handleTask(msg, notify) {
 
     } else if (taskType === 'aistudio') {
       notify('STATUS', '正在下载音频...');
-      _progressNotify = notify;
+      _progressNotifyMap.set(biliTabId, notify);
       let audioData;
       try {
         audioData = await downloadAudio(biliTabId, audioUrls);
       } finally {
-        _progressNotify = null;
+        _progressNotifyMap.delete(biliTabId);
       }
 
       notify('STATUS', '正在打开 AI Studio...');

@@ -38,7 +38,7 @@ window.addEventListener('message', async (event) => {
         window.postMessage({
           type: 'BILIBILI_FETCH_RESULT',
           requestId,
-          result: { ok: true, data: Array.from(combined) },
+          result: { ok: true, data: combined },
         }, '*');
         return;
       }

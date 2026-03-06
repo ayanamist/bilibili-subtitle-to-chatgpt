@@ -157,7 +157,7 @@
       (async () => {
         try {
           const fileName = `bili_audio_${crypto.randomUUID().slice(0, 8)}.m4s`;
-          const audioBuffer = new Uint8Array(msg.audioData).buffer;
+          const audioBuffer = (msg.audioData instanceof Uint8Array ? msg.audioData : new Uint8Array(msg.audioData)).buffer;
           await handleUploadAndRun(audioBuffer, fileName, msg.prompt, msg.tempChat);
         } catch (e) {
           console.error('AISTUDIO_UPLOAD_AND_RUN failed:', e);
