@@ -238,6 +238,7 @@ async function run() {
         bgOpen: bgOpenCheckbox.checked,
         tempChat: tempChatCheckbox.checked,
         audioUrls,
+        biliTabId: tab.id,
         prompt: promptText,
       });
     }

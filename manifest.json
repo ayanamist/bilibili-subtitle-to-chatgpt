@@ -9,8 +9,7 @@
   "permissions": [
     "activeTab",
     "tabs",
-    "storage",
-    "declarativeNetRequest"
+    "storage"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
@@ -21,13 +20,6 @@
     "https://*.bilivideo.com/*",
     "https://*.bilivideo.cn/*"
   ],
-  "declarative_net_request": {
-    "rule_resources": [{
-      "id": "bilibili_referer",
-      "enabled": true,
-      "path": "rules.json"
-    }]
-  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -37,6 +29,17 @@
     }
   },
   "content_scripts": [
+    {
+      "matches": ["https://www.bilibili.com/video/*"],
+      "js": ["bilibili-content-main.js"],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.bilibili.com/video/*"],
+      "js": ["bilibili-content.js"],
+      "run_at": "document_idle"
+    },
     {
       "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
       "js": ["chatgpt-content.js"]

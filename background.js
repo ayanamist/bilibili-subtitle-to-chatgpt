@@ -45,27 +45,19 @@ function overlayMsg(tabId, msg) {
   chrome.tabs.sendMessage(tabId, msg).catch(() => {});
 }
 
-// Download audio from Bilibili CDN. The declarativeNetRequest rule in rules.json
-// automatically sets Referer: https://www.bilibili.com/ at the network layer,
-// so no scripting injection is needed.
-async function downloadAudio(audioUrls) {
+// Download audio by messaging the Bilibili tab's MAIN-world content script.
+// fetch() in MAIN world carries the correct Referer automatically.
+// Result is a plain number array (JSON-safe throughout the message chain).
+async function downloadAudio(biliTabId, audioUrls) {
   const urls = [audioUrls.baseUrl, audioUrls.backupUrl].filter(Boolean);
-  const errors = [];
-  for (const url of urls) {
-    try {
-      const res = await fetch(url);
-      if (res.ok) return res.arrayBuffer();
-      errors.push(`HTTP ${res.status} ${res.statusText} (${new URL(url).hostname})`);
-    } catch (e) {
-      errors.push(`${e.message} (${new URL(url).hostname})`);
-    }
-  }
-  throw new Error(`音频下载失败：${errors.join('；')}`);
+  const result = await chrome.tabs.sendMessage(biliTabId, { type: 'BILIBILI_FETCH_AUDIO', urls });
+  if (!result.ok) throw new Error(`音频下载失败：${result.error}`);
+  return result.data; // plain number array
 }
 
 // Main task handler — runs in the service worker, independent of popup lifecycle
 async function handleTask(msg, notify) {
-  const { taskType, openerTabIndex, bgOpen, tempChat, file, audioUrls, prompt } = msg;
+  const { taskType, openerTabIndex, bgOpen, tempChat, file, audioUrls, biliTabId, prompt } = msg;
   let targetTabId = null;
 
   try {
@@ -101,7 +93,7 @@ async function handleTask(msg, notify) {
 
     } else if (taskType === 'aistudio') {
       notify('STATUS', '正在下载音频...');
-      const audioBuffer = await downloadAudio(audioUrls);
+      const audioData = await downloadAudio(biliTabId, audioUrls);
 
       notify('STATUS', '正在打开 AI Studio...');
       const tab = await chrome.tabs.create({
@@ -125,7 +117,7 @@ async function handleTask(msg, notify) {
       notify('STATUS', '正在发送音频到 AI Studio...');
       await chrome.tabs.sendMessage(targetTabId, {
         type: 'AISTUDIO_UPLOAD_AND_RUN',
-        audioData: Array.from(new Uint8Array(audioBuffer)),
+        audioData,
         prompt,
         tempChat,
       });
