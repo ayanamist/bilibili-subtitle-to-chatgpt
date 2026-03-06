@@ -64,91 +64,6 @@ function setStatus(msg) {
   statusText.textContent = msg;
 }
 
-// Send status to the target tab's content script overlay
-let _targetTabId = null;
-
-function sendTabStatus(msg) {
-  if (_targetTabId) {
-    chrome.tabs.sendMessage(_targetTabId, { type: 'EXT_STATUS', text: msg }).catch(() => {});
-  }
-}
-
-function sendTabError(msg) {
-  if (_targetTabId) {
-    chrome.tabs.sendMessage(_targetTabId, { type: 'EXT_ERROR', text: msg }).catch(() => {});
-  }
-}
-
-// Create a new ChatGPT tab (inactive so popup stays open)
-async function openChatGPTTab(openerIndex) {
-  let url = 'https://chatgpt.com/';
-  if (tempChatCheckbox.checked) {
-    url += '?temporary-chat=true';
-  }
-  const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1 });
-  await waitForTabLoad(tab.id);
-  return tab.id;
-}
-
-// Create a new AI Studio tab (inactive so popup stays open)
-async function openAIStudioTab(openerIndex) {
-  const url = 'https://aistudio.google.com/prompts/new_chat';
-  const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1 });
-  await waitForTabLoad(tab.id);
-  return tab.id;
-}
-
-function waitForTabLoad(tabId) {
-  return new Promise((resolve) => {
-    function listener(id, changeInfo) {
-      if (id === tabId && changeInfo.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
-        // Extra delay for SPA hydration
-        setTimeout(resolve, 1500);
-      }
-    }
-    chrome.tabs.onUpdated.addListener(listener);
-  });
-}
-
-// Ensure the content script is injected and ChatGPT is ready
-async function ensureChatGPTReady(tabId) {
-  const maxAttempts = 10;
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const response = await chrome.tabs.sendMessage(tabId, { type: 'CHATGPT_CHECK_READY' });
-      if (response && response.ready) return true;
-      if (response && !response.loggedIn) {
-        showError('请先登录 chatgpt.com，然后重试。');
-        return false;
-      }
-    } catch (e) {
-      // Content script not yet initialized, retry
-    }
-    await new Promise(r => setTimeout(r, 500));
-  }
-
-  showError('无法连接到 ChatGPT 页面，请刷新 chatgpt.com 后重试。');
-  return false;
-}
-
-// Ensure the content script is injected and AI Studio is ready
-async function ensureAIStudioReady(tabId) {
-  const maxAttempts = 10;
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const response = await chrome.tabs.sendMessage(tabId, { type: 'AISTUDIO_CHECK_READY' });
-      if (response && response.ready) return true;
-    } catch (e) {
-      // Content script not yet initialized, retry
-    }
-    await new Promise(r => setTimeout(r, 500));
-  }
-
-  showError('无法连接到 AI Studio 页面，请确保已登录 aistudio.google.com 后重试。');
-  return false;
-}
-
 // Fetch video info (bvid, aid, cid) from Bilibili
 async function fetchVideoInfo(pageUrl) {
   const bvMatch = pageUrl.match(/\/video\/(BV[\w]+)/);
@@ -243,6 +158,7 @@ async function run() {
   hideError();
   isRunning = true;
   runBtn.disabled = true;
+  let handedOff = false;
 
   try {
     // Get current tab URL
@@ -266,77 +182,74 @@ async function run() {
     }
 
     const useAIStudio = forceAIStudioCheckbox.checked || !subtitle;
+    const promptText = await loadPrompt();
 
-    if (subtitle && !useAIStudio) {
+    // Connect to background service worker — it will open the tab and do the rest
+    // independently of whether this popup stays open.
+    setStatus('正在移交任务，请勿关闭此窗口...');
+    const port = chrome.runtime.connect({ name: 'bilibili-subtitle' });
+
+    port.onMessage.addListener((msg) => {
+      if (msg.type === 'STATUS') setStatus(msg.text + '（可关闭此窗口）');
+      if (msg.type === 'ERROR') {
+        showError(msg.text);
+        isRunning = false;
+        runBtn.disabled = false;
+      }
+      if (msg.type === 'DONE') {
+        setStatus(msg.text);
+        isRunning = false;
+        runBtn.disabled = false;
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (isRunning) {
+        isRunning = false;
+        runBtn.disabled = false;
+      }
+    });
+
+    if (!useAIStudio) {
       // Subtitle flow — send to ChatGPT
       const srtContent = subtitleToSrt(subtitle.body);
       const title = tab.title || 'bilibili-subtitle';
       const fileName = bvid ? `${bvid}_${title}.srt` : `${title}.srt`;
 
-      // Load prompt text
-      const promptText = await loadPrompt();
-
-      // Open new ChatGPT tab
-      setStatus('正在打开 ChatGPT...（请勿切换标签页）');
-      const chatgptTabId = await openChatGPTTab(tab.index);
-      _targetTabId = chatgptTabId;
-
-      // Ensure ready
-      setStatus('正在连接 ChatGPT...（请勿切换标签页）');
-      sendTabStatus('正在连接 ChatGPT...');
-      const ready = await ensureChatGPTReady(chatgptTabId);
-      if (!ready) return;
-
-      // Send file data to content script
-      setStatus('正在发送字幕文件...');
-      await chrome.tabs.sendMessage(chatgptTabId, {
-        type: 'CHATGPT_PREPARE_PROMPT',
+      port.postMessage({
+        type: 'START_TASK',
+        taskType: 'chatgpt',
+        openerTabIndex: tab.index,
+        bgOpen: bgOpenCheckbox.checked,
+        tempChat: tempChatCheckbox.checked,
         file: { name: fileName, content: srtContent },
-        prompt: promptText
+        prompt: promptText,
       });
-
-      // Switch to ChatGPT tab
-      if (!bgOpenCheckbox.checked) {
-        await chrome.tabs.update(chatgptTabId, { active: true });
-      }
-      setStatus(bgOpenCheckbox.checked ? '已在后台打开 ChatGPT 页面。' : '已切换到 ChatGPT 页面。');
     } else {
       // Audio fallback or forced AI Studio
       setStatus('正在获取音频信息...');
       const audioUrls = await fetchSmallestAudioUrl(aid, cid);
 
-      setStatus('正在打开 AI Studio...（请勿切换标签页）');
-      const aiStudioTabId = await openAIStudioTab(tab.index);
-      _targetTabId = aiStudioTabId;
-
-      setStatus('正在连接 AI Studio...（请勿切换标签页）');
-      sendTabStatus('正在连接 AI Studio...');
-      const ready = await ensureAIStudioReady(aiStudioTabId);
-      if (!ready) return;
-
-      // Load prompt text
-      const promptText = await loadPrompt();
-
-      setStatus('正在发送音频到 AI Studio...');
-      await chrome.tabs.sendMessage(aiStudioTabId, {
-        type: 'AISTUDIO_UPLOAD_AND_RUN',
+      port.postMessage({
+        type: 'START_TASK',
+        taskType: 'aistudio',
+        openerTabIndex: tab.index,
+        bgOpen: bgOpenCheckbox.checked,
+        tempChat: tempChatCheckbox.checked,
         audioUrls,
         prompt: promptText,
-        tempChat: tempChatCheckbox.checked
       });
-
-      if (!bgOpenCheckbox.checked) {
-        await chrome.tabs.update(aiStudioTabId, { active: true });
-      }
-      setStatus(bgOpenCheckbox.checked ? '已在后台打开 AI Studio 页面。' : '已切换到 AI Studio 页面。');
     }
+
+    handedOff = true;
+    setStatus('正在后台处理，可关闭此窗口...');
   } catch (e) {
     showError(`错误：${e.message}`);
-    sendTabError(`错误：${e.message}`);
   } finally {
-    isRunning = false;
-    runBtn.disabled = false;
-    _targetTabId = null;
+    if (!handedOff) {
+      isRunning = false;
+      runBtn.disabled = false;
+    }
   }
 }
 
