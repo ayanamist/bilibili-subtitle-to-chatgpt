@@ -12,7 +12,10 @@
         'background:#1a73e8;color:#fff;padding:10px 16px;border-radius:8px;' +
         'font-size:14px;font-family:system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);' +
         'max-width:360px;line-height:1.4;transition:opacity .3s;';
-      document.body.appendChild(statusOverlay);
+    }
+    // document_start: body may not exist yet; attach/re-attach when available
+    if (!statusOverlay.parentNode) {
+      (document.body || document.documentElement).appendChild(statusOverlay);
     }
     statusOverlay.style.background = '#1a73e8';
     statusOverlay.style.opacity = '1';
@@ -137,25 +140,33 @@
     hideStatus();
   }
 
-  // --- Check readiness ---
+  // --- Wait for AI Studio to become interactive ---
 
-  function checkReady() {
-    const textarea = document.querySelector('textarea');
-    return { ready: !!textarea };
+  function waitForReady(timeout = 30000) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector('textarea')) { resolve(); return; }
+      const start = Date.now();
+      const timer = setInterval(() => {
+        if (document.querySelector('textarea')) {
+          clearInterval(timer);
+          resolve();
+        } else if (Date.now() - start > timeout) {
+          clearInterval(timer);
+          reject(new Error('AI Studio 页面加载超时，请确认已登录后重试'));
+        }
+      }, 200);
+    });
   }
 
   // --- Message listener ---
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.type === 'AISTUDIO_CHECK_READY') {
-      sendResponse(checkReady());
-      return;
-    }
-
     if (msg.type === 'AISTUDIO_UPLOAD_AND_RUN') {
       sendResponse({ ok: true });
       (async () => {
         try {
+          showStatus('正在等待页面就绪...');
+          await waitForReady();
           const fileName = `bili_audio_${crypto.randomUUID().slice(0, 8)}.m4s`;
           const audioBuffer = (msg.audioData instanceof Uint8Array ? msg.audioData : new Uint8Array(msg.audioData)).buffer;
           await handleUploadAndRun(audioBuffer, fileName, msg.prompt, msg.tempChat);

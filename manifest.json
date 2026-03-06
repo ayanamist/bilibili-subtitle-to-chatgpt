@@ -46,7 +46,8 @@
     },
     {
       "matches": ["https://aistudio.google.com/*"],
-      "js": ["aistudio-content.js"]
+      "js": ["aistudio-content.js"],
+      "run_at": "document_start"
     }
   ],
   "options_ui": {

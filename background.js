@@ -33,19 +33,6 @@ async function ensureChatGPTReady(tabId) {
   return 'timeout';
 }
 
-// Poll until AI Studio content script reports ready
-async function ensureAIStudioReady(tabId) {
-  const maxAttempts = 10;
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const response = await chrome.tabs.sendMessage(tabId, { type: 'AISTUDIO_CHECK_READY' });
-      if (response && response.ready) return true;
-    } catch (e) {}
-    await new Promise(r => setTimeout(r, 500));
-  }
-  return false;
-}
-
 // Send a message to the target tab's overlay (fire-and-forget)
 function overlayMsg(tabId, msg) {
   chrome.tabs.sendMessage(tabId, msg).catch(() => {});
@@ -131,16 +118,7 @@ async function handleTask(msg, notify) {
       targetTabId = tab.id;
       await waitForTabLoad(targetTabId);
 
-      notify('STATUS', '正在连接 AI Studio...');
-      overlayMsg(targetTabId, { type: 'EXT_STATUS', text: '正在连接 AI Studio...' });
-      const ready = await ensureAIStudioReady(targetTabId);
-      if (!ready) {
-        const errMsg = '无法连接到 AI Studio，请先登录 aistudio.google.com 后重试。';
-        notify('ERROR', errMsg);
-        overlayMsg(targetTabId, { type: 'EXT_ERROR', text: errMsg });
-        return;
-      }
-
+      // Content script is injected at document_start and handles DOM readiness internally.
       notify('STATUS', '正在发送音频到 AI Studio...');
       await chrome.tabs.sendMessage(targetTabId, {
         type: 'AISTUDIO_UPLOAD_AND_RUN',
