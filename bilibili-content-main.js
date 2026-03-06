@@ -5,7 +5,15 @@
 // which the bilivideo CDN requires. No scripting or declarativeNetRequest needed.
 //
 // Receives requests from the ISOLATED world bridge via window.postMessage and
-// returns the audio as a plain number array (JSON-safe, no ArrayBuffer issues).
+// returns the audio as a base64 string (JSON-safe, avoids ArrayBuffer issues
+// in chrome.runtime.sendMessage / sendResponse serialization).
+function uint8ToBase64(u8) {
+  const CHUNK = 0x8000;
+  let s = '';
+  for (let i = 0; i < u8.length; i += CHUNK)
+    s += String.fromCharCode(...u8.subarray(i, i + CHUNK));
+  return btoa(s);
+}
 window.addEventListener('message', async (event) => {
   if (event.source !== window || !event.data) return;
   if (event.data.type !== 'BILIBILI_FETCH_AUDIO') return;
@@ -38,7 +46,7 @@ window.addEventListener('message', async (event) => {
         window.postMessage({
           type: 'BILIBILI_FETCH_RESULT',
           requestId,
-          result: { ok: true, data: combined },
+          result: { ok: true, data: uint8ToBase64(combined) },
         }, '*');
         return;
       }

@@ -168,7 +168,10 @@
           showStatus('正在等待页面就绪...');
           await waitForReady();
           const fileName = `bili_audio_${crypto.randomUUID().slice(0, 8)}.m4s`;
-          const audioBuffer = (msg.audioData instanceof Uint8Array ? msg.audioData : new Uint8Array(msg.audioData)).buffer;
+          const binary = atob(msg.audioData);
+          const u8 = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) u8[i] = binary.charCodeAt(i);
+          const audioBuffer = u8.buffer;
           await handleUploadAndRun(audioBuffer, fileName, msg.prompt, msg.tempChat);
         } catch (e) {
           console.error('AISTUDIO_UPLOAD_AND_RUN failed:', e);
