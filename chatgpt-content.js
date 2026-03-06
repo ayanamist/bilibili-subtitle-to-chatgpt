@@ -144,6 +144,60 @@
     });
   }
 
+  // After clicking send, if bgOpen, watch for the new response turn and
+  // scroll its top into view the moment ChatGPT pushes it above the viewport.
+  // ChatGPT then treats this as a user scroll and stops its own auto-scroll.
+  function watchAndScrollToResponseTop() {
+    function findScrollContainer() {
+      let el = document.querySelector('main');
+      while (el) {
+        const style = getComputedStyle(el);
+        if (style.overflowY === 'auto' || style.overflowY === 'scroll') return el;
+        el = el.parentElement;
+      }
+      return null;
+    }
+
+    function offsetRelativeTo(el, ancestor) {
+      let top = 0;
+      while (el && el !== ancestor) {
+        top += el.offsetTop;
+        el = el.offsetParent;
+      }
+      return top;
+    }
+
+    const sc = findScrollContainer();
+    if (!sc) return;
+
+    // Record existing turns so we can detect the new one
+    const existingTurns = new Set(document.querySelectorAll('[data-testid^="conversation-turn"]'));
+
+    const mo = new MutationObserver(() => {
+      const allTurns = document.querySelectorAll('[data-testid^="conversation-turn"]');
+      let newTurn = null;
+      for (const t of allTurns) {
+        if (!existingTurns.has(t)) { newTurn = t; break; }
+      }
+      if (!newTurn) return;
+      mo.disconnect();
+
+      let done = false;
+      function onScroll() {
+        if (done) return;
+        const turnTop = offsetRelativeTo(newTurn, sc);
+        if (turnTop < sc.scrollTop) {
+          done = true;
+          sc.removeEventListener('scroll', onScroll);
+          sc.scrollTop = Math.max(0, turnTop - 20);
+        }
+      }
+      sc.addEventListener('scroll', onScroll);
+    });
+
+    mo.observe(document.querySelector('main') || document.body, { childList: true, subtree: true });
+  }
+
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'CHATGPT_CHECK_READY') {
       sendResponse(checkReady());
@@ -163,6 +217,7 @@
           }
           showStatus('正在发送...');
           await clickSend();
+          if (msg.bgOpen) watchAndScrollToResponseTop();
           hideStatus();
         } catch (e) {
           console.error('CHATGPT_PREPARE_PROMPT failed:', e);

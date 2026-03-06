@@ -75,6 +75,7 @@ async function handleTask(msg, notify) {
         type: 'CHATGPT_PREPARE_PROMPT',
         file,
         prompt,
+        bgOpen,
       });
 
       if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
