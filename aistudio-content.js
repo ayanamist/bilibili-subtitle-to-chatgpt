@@ -186,5 +186,21 @@
       })();
       return;
     }
+
+    if (msg.type === 'EXT_STATUS') {
+      showStatus(msg.text);
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.type === 'EXT_ERROR') {
+      showError(msg.text);
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.type === 'EXT_HIDE_STATUS') {
+      hideStatus();
+      sendResponse({ ok: true });
+      return;
+    }
   });
 })();

@@ -1,5 +1,37 @@
 // ChatGPT page content script: attach SRT file and send
 (() => {
+  // --- Status overlay ---
+
+  let statusOverlay = null;
+
+  function showStatus(msg) {
+    if (!statusOverlay) {
+      statusOverlay = document.createElement('div');
+      statusOverlay.style.cssText =
+        'position:fixed;top:16px;right:16px;z-index:999999;' +
+        'background:#10a37f;color:#fff;padding:10px 16px;border-radius:8px;' +
+        'font-size:14px;font-family:system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);' +
+        'max-width:360px;line-height:1.4;transition:opacity .3s;';
+      document.body.appendChild(statusOverlay);
+    }
+    statusOverlay.style.background = '#10a37f';
+    statusOverlay.style.opacity = '1';
+    statusOverlay.textContent = msg;
+  }
+
+  function showError(msg) {
+    showStatus(msg);
+    statusOverlay.style.background = '#e53935';
+  }
+
+  function hideStatus() {
+    if (statusOverlay) {
+      statusOverlay.style.opacity = '0';
+      setTimeout(() => statusOverlay?.remove(), 300);
+      statusOverlay = null;
+    }
+  }
+
   function findTextarea() {
     return document.querySelector('#prompt-textarea')
       || document.querySelector('div[contenteditable][data-placeholder]')
@@ -123,15 +155,36 @@
       sendResponse({ ok: true });
       (async () => {
         try {
+          showStatus('正在添加字幕文件...');
           await attachFile(msg.file.name, msg.file.content);
           if (msg.prompt) {
+            showStatus('正在输入提示词...');
             inputPrompt(msg.prompt);
           }
+          showStatus('正在发送...');
           await clickSend();
+          hideStatus();
         } catch (e) {
           console.error('CHATGPT_PREPARE_PROMPT failed:', e);
+          showError(`错误：${e.message}`);
         }
       })();
+      return;
+    }
+
+    if (msg.type === 'EXT_STATUS') {
+      showStatus(msg.text);
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.type === 'EXT_ERROR') {
+      showError(msg.text);
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.type === 'EXT_HIDE_STATUS') {
+      hideStatus();
+      sendResponse({ ok: true });
       return;
     }
   });

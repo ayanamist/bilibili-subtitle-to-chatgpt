@@ -64,6 +64,21 @@ function setStatus(msg) {
   statusText.textContent = msg;
 }
 
+// Send status to the target tab's content script overlay
+let _targetTabId = null;
+
+function sendTabStatus(msg) {
+  if (_targetTabId) {
+    chrome.tabs.sendMessage(_targetTabId, { type: 'EXT_STATUS', text: msg }).catch(() => {});
+  }
+}
+
+function sendTabError(msg) {
+  if (_targetTabId) {
+    chrome.tabs.sendMessage(_targetTabId, { type: 'EXT_ERROR', text: msg }).catch(() => {});
+  }
+}
+
 // Create a new ChatGPT tab (inactive so popup stays open)
 async function openChatGPTTab(openerIndex) {
   let url = 'https://chatgpt.com/';
@@ -264,9 +279,11 @@ async function run() {
       // Open new ChatGPT tab
       setStatus('正在打开 ChatGPT...（请勿切换标签页）');
       const chatgptTabId = await openChatGPTTab(tab.index);
+      _targetTabId = chatgptTabId;
 
       // Ensure ready
       setStatus('正在连接 ChatGPT...（请勿切换标签页）');
+      sendTabStatus('正在连接 ChatGPT...');
       const ready = await ensureChatGPTReady(chatgptTabId);
       if (!ready) return;
 
@@ -290,8 +307,10 @@ async function run() {
 
       setStatus('正在打开 AI Studio...（请勿切换标签页）');
       const aiStudioTabId = await openAIStudioTab(tab.index);
+      _targetTabId = aiStudioTabId;
 
       setStatus('正在连接 AI Studio...（请勿切换标签页）');
+      sendTabStatus('正在连接 AI Studio...');
       const ready = await ensureAIStudioReady(aiStudioTabId);
       if (!ready) return;
 
@@ -313,9 +332,11 @@ async function run() {
     }
   } catch (e) {
     showError(`错误：${e.message}`);
+    sendTabError(`错误：${e.message}`);
   } finally {
     isRunning = false;
     runBtn.disabled = false;
+    _targetTabId = null;
   }
 }
 
