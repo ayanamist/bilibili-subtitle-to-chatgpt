@@ -66,6 +66,8 @@ function setStatus(msg) {
 
 // Fetch video info (bvid, aid, cid) from Bilibili
 async function fetchVideoInfo(pageUrl) {
+  setStatus('正在获取视频信息...');
+
   const bvMatch = pageUrl.match(/\/video\/(BV[\w]+)/);
   if (!bvMatch) {
     throw new Error('URL 中未找到 BV 号');
@@ -95,7 +97,9 @@ async function fetchVideoInfo(pageUrl) {
 }
 
 // Fetch subtitle for given aid/cid, returns subtitle body or null
-async function fetchSubtitle(aid, cid) {
+async function fetchSubtitle(bvid, aid, cid) {
+  setStatus(`正在获取字幕... (${bvid})`);
+
   const playerUrl = `https://api.bilibili.com/x/player/wbi/v2?aid=${aid}&cid=${cid}`;
   const playerRes = await fetch(playerUrl);
   const playerData = await playerRes.json();
@@ -134,7 +138,6 @@ async function fetchSmallestAudioUrl(aid, cid) {
   const smallest = audio.reduce((min, a) => a.bandwidth < min.bandwidth ? a : min);
   return { baseUrl: smallest.baseUrl, backupUrl: smallest.backupUrl?.[0] };
 }
-
 // Convert seconds to SRT time format: HH:MM:SS,mmm
 function secondsToSrtTime(seconds) {
   const h = Math.floor(seconds / 3600);
@@ -171,14 +174,12 @@ async function run() {
     }
 
     // Get video info (use cache from init if available)
-    setStatus('正在获取视频信息...');
     const { bvid, aid, cid } = cachedVideoInfo || await fetchVideoInfo(pageUrl);
 
     // Try fetching subtitles (skip if forced to use AI Studio)
     let subtitle = null;
     if (!forceAIStudioCheckbox.checked) {
-      setStatus(`正在检测字幕... (${bvid})`);
-      subtitle = cachedHasSubtitle === false ? null : await fetchSubtitle(aid, cid);
+      subtitle = cachedHasSubtitle === false ? null : await fetchSubtitle(bvid, aid, cid);
     }
 
     const useAIStudio = forceAIStudioCheckbox.checked || !subtitle;
@@ -268,7 +269,7 @@ runBtn.addEventListener('click', run);
 
     try {
       cachedVideoInfo = await fetchVideoInfo(pageUrl);
-      const subtitle = await fetchSubtitle(cachedVideoInfo.aid, cachedVideoInfo.cid);
+      const subtitle = await fetchSubtitle(cachedVideoInfo.bvid, cachedVideoInfo.aid, cachedVideoInfo.cid);
       cachedHasSubtitle = !!subtitle;
       updateRunBtnText();
       if (cachedHasSubtitle) {

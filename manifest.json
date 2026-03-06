@@ -9,7 +9,8 @@
   "permissions": [
     "activeTab",
     "tabs",
-    "storage"
+    "storage",
+    "declarativeNetRequest"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
@@ -20,6 +21,13 @@
     "https://*.bilivideo.com/*",
     "https://*.bilivideo.cn/*"
   ],
+  "declarative_net_request": {
+    "rule_resources": [{
+      "id": "bilibili_referer",
+      "enabled": true,
+      "path": "rules.json"
+    }]
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

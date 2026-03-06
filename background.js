@@ -45,19 +45,16 @@ function overlayMsg(tabId, msg) {
   chrome.tabs.sendMessage(tabId, msg).catch(() => {});
 }
 
-// Download audio from Bilibili CDN in the service worker context
+// Download audio from Bilibili CDN. The declarativeNetRequest rule in rules.json
+// automatically sets Referer: https://www.bilibili.com/ at the network layer,
+// so no scripting injection is needed.
 async function downloadAudio(audioUrls) {
   const urls = [audioUrls.baseUrl, audioUrls.backupUrl].filter(Boolean);
   const errors = [];
   for (const url of urls) {
     try {
-      const res = await fetch(url, {
-        headers: { 'Referer': 'https://www.bilibili.com/' }
-      });
-      if (res.ok) {
-        const buf = await res.arrayBuffer();
-        return buf;
-      }
+      const res = await fetch(url);
+      if (res.ok) return res.arrayBuffer();
       errors.push(`HTTP ${res.status} ${res.statusText} (${new URL(url).hostname})`);
     } catch (e) {
       errors.push(`${e.message} (${new URL(url).hostname})`);
@@ -103,7 +100,6 @@ async function handleTask(msg, notify) {
       notify('DONE', bgOpen ? '已在后台打开 ChatGPT 页面。' : '已切换到 ChatGPT 页面。');
 
     } else if (taskType === 'aistudio') {
-      // Download audio in the background before opening AI Studio
       notify('STATUS', '正在下载音频...');
       const audioBuffer = await downloadAudio(audioUrls);
 
@@ -129,7 +125,7 @@ async function handleTask(msg, notify) {
       notify('STATUS', '正在发送音频到 AI Studio...');
       await chrome.tabs.sendMessage(targetTabId, {
         type: 'AISTUDIO_UPLOAD_AND_RUN',
-        audioBuffer,
+        audioData: Array.from(new Uint8Array(audioBuffer)),
         prompt,
         tempChat,
       });

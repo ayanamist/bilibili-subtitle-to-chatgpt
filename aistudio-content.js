@@ -116,6 +116,10 @@
   // --- Main handler ---
 
   async function handleUploadAndRun(audioBuffer, fileName, prompt, tempChat) {
+    if (!(audioBuffer.byteLength >= 1024)) {
+      throw new Error(`音频数据异常（byteLength=${audioBuffer.byteLength}），下载可能失败，已中止`);
+    }
+
     if (tempChat) enableTempChat();
 
     showStatus('正在上传音频...');
@@ -153,7 +157,8 @@
       (async () => {
         try {
           const fileName = `bili_audio_${crypto.randomUUID().slice(0, 8)}.m4s`;
-          await handleUploadAndRun(msg.audioBuffer, fileName, msg.prompt, msg.tempChat);
+          const audioBuffer = new Uint8Array(msg.audioData).buffer;
+          await handleUploadAndRun(audioBuffer, fileName, msg.prompt, msg.tempChat);
         } catch (e) {
           console.error('AISTUDIO_UPLOAD_AND_RUN failed:', e);
           showError(`错误：${e.message}`);
