@@ -119,19 +119,23 @@
       dropTarget.dispatchEvent(drop);
     }
 
-    await waitForFileAttachment();
+    await waitForFileAttachment(fileName);
   }
 
-  function waitForFileAttachment() {
+  // Wait until the file tile card appears AND its remove button is interactive,
+  // which reliably indicates the upload is complete.
+  function waitForFileAttachment(fileName) {
     return new Promise((resolve, reject) => {
       let attempts = 0;
-      const maxAttempts = 30;
+      const maxAttempts = 60; // 12 seconds max
       const timer = setInterval(() => {
         attempts++;
-        const attached = document.querySelector('[data-testid*="file"]')
-          || document.querySelector('[class*="attachment"]')
-          || document.querySelector('[class*="file"]');
-        if (attached) {
+        // Prefer matching by exact filename aria-label; fall back to any file-tile
+        const fileTile = document.querySelector(`[class*="file-tile"][role="group"][aria-label="${CSS.escape(fileName)}"]`)
+          || document.querySelector('[class*="file-tile"][role="group"]');
+        // The remove/action button (class "behavior-btn") only appears once the upload is fully complete
+        const removeBtn = fileTile?.querySelector('button[class*="behavior-btn"]');
+        if (fileTile && removeBtn) {
           clearInterval(timer);
           setTimeout(resolve, 200);
           return;
