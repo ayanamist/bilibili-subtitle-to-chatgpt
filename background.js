@@ -45,6 +45,15 @@ function overlayMsg(tabId, msg) {
   chrome.tabs.sendMessage(tabId, msg).catch(() => {});
 }
 
+// Receive download progress from bilibili-content.js and forward to popup.
+let _progressNotify = null;
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type !== 'BILIBILI_FETCH_PROGRESS' || !_progressNotify) return;
+  const loadedMB = (msg.loaded / 1024 / 1024).toFixed(1);
+  const totalStr = msg.total ? ` / ${(msg.total / 1024 / 1024).toFixed(1)} MB` : '';
+  _progressNotify('STATUS', `正在下载音频... ${loadedMB} MB${totalStr}`);
+});
+
 // Download audio by messaging the Bilibili tab's MAIN-world content script.
 // fetch() in MAIN world carries the correct Referer automatically.
 // Result is a plain number array (JSON-safe throughout the message chain).
@@ -93,7 +102,13 @@ async function handleTask(msg, notify) {
 
     } else if (taskType === 'aistudio') {
       notify('STATUS', '正在下载音频...');
-      const audioData = await downloadAudio(biliTabId, audioUrls);
+      _progressNotify = notify;
+      let audioData;
+      try {
+        audioData = await downloadAudio(biliTabId, audioUrls);
+      } finally {
+        _progressNotify = null;
+      }
 
       notify('STATUS', '正在打开 AI Studio...');
       const tab = await chrome.tabs.create({

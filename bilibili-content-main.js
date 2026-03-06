@@ -17,11 +17,28 @@ window.addEventListener('message', async (event) => {
     try {
       const res = await fetch(url);
       if (res.ok) {
-        const buf = await res.arrayBuffer();
+        const contentLength = res.headers.get('Content-Length');
+        const total = contentLength ? parseInt(contentLength, 10) : 0;
+        const reader = res.body.getReader();
+        const chunks = [];
+        let loaded = 0;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          loaded += value.length;
+          window.postMessage({ type: 'BILIBILI_FETCH_PROGRESS', requestId, loaded, total }, '*');
+        }
+
+        const combined = new Uint8Array(loaded);
+        let offset = 0;
+        for (const chunk of chunks) { combined.set(chunk, offset); offset += chunk.length; }
+
         window.postMessage({
           type: 'BILIBILI_FETCH_RESULT',
           requestId,
-          result: { ok: true, data: Array.from(new Uint8Array(buf)) },
+          result: { ok: true, data: Array.from(combined) },
         }, '*');
         return;
       }

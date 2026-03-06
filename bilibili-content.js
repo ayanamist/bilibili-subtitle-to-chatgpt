@@ -1,5 +1,16 @@
 'use strict';
 
+// Forward download progress from MAIN world to background service worker.
+window.addEventListener('message', (event) => {
+  if (event.source !== window || !event.data) return;
+  if (event.data.type !== 'BILIBILI_FETCH_PROGRESS') return;
+  chrome.runtime.sendMessage({
+    type: 'BILIBILI_FETCH_PROGRESS',
+    loaded: event.data.loaded,
+    total: event.data.total,
+  }).catch(() => {});
+});
+
 // Runs in the ISOLATED world — bridges chrome.tabs.sendMessage from the
 // background to the MAIN world content script via window.postMessage.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

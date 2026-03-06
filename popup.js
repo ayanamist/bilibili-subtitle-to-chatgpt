@@ -191,14 +191,14 @@ async function run() {
     const port = chrome.runtime.connect({ name: 'bilibili-subtitle' });
 
     port.onMessage.addListener((msg) => {
-      if (msg.type === 'STATUS') setStatus(msg.text + '（可关闭此窗口）');
+      if (msg.type === 'STATUS') setStatus(msg.text);
       if (msg.type === 'ERROR') {
         showError(msg.text);
         isRunning = false;
         runBtn.disabled = false;
       }
       if (msg.type === 'DONE') {
-        setStatus(msg.text);
+        setStatus(msg.text + '（可关闭此窗口）');
         isRunning = false;
         runBtn.disabled = false;
       }
@@ -244,7 +244,7 @@ async function run() {
     }
 
     handedOff = true;
-    setStatus('正在后台处理，可关闭此窗口...');
+    // Status will be updated by background notify messages
   } catch (e) {
     showError(`错误：${e.message}`);
   } finally {
