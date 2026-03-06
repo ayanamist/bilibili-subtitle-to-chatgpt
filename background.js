@@ -74,6 +74,7 @@ async function handleTask(msg, notify) {
       notify('STATUS', '正在打开 ChatGPT...');
       const tab = await chrome.tabs.create({ url, active: false, index: openerTabIndex + 1 });
       targetTabId = tab.id;
+      if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
       await waitForTabLoad(targetTabId);
 
       notify('STATUS', '正在连接 ChatGPT...');
@@ -96,7 +97,6 @@ async function handleTask(msg, notify) {
         bgOpen,
       });
 
-      if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
       notify('DONE', bgOpen ? '已在后台打开 ChatGPT 页面。' : '已切换到 ChatGPT 页面。');
 
     } else if (taskType === 'aistudio') {
@@ -117,6 +117,7 @@ async function handleTask(msg, notify) {
       });
       targetTabId = tab.id;
       await waitForTabLoad(targetTabId);
+      if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
 
       // Content script is injected at document_start and handles DOM readiness internally.
       notify('STATUS', '正在发送音频到 AI Studio...');
@@ -127,7 +128,6 @@ async function handleTask(msg, notify) {
         tempChat,
       });
 
-      if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
       notify('DONE', bgOpen ? '已在后台打开 AI Studio 页面。' : '已切换到 AI Studio 页面。');
     }
   } catch (e) {
