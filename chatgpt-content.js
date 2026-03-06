@@ -123,7 +123,7 @@
   }
 
   function waitForFileAttachment() {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       let attempts = 0;
       const maxAttempts = 30;
       const timer = setInterval(() => {
@@ -138,7 +138,7 @@
         }
         if (attempts >= maxAttempts) {
           clearInterval(timer);
-          resolve();
+          reject(new Error('字幕文件未能成功附加，请重试'));
         }
       }, 200);
     });

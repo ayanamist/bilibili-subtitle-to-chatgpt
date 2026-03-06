@@ -94,7 +94,7 @@
       }
       await sleep(500);
     }
-    console.warn('[bili-content] waitForFileAttached timed out — proceeding anyway');
+    throw new Error('音频文件未能成功上传，请重试');
   }
 
   // --- Type prompt into textarea ---
