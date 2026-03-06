@@ -8,10 +8,12 @@ const errorBox = document.getElementById('errorBox');
 const statusText = document.getElementById('statusText');
 const tempChatCheckbox = document.getElementById('tempChatCheckbox');
 const forceAIStudioCheckbox = document.getElementById('forceAIStudioCheckbox');
+const bgOpenCheckbox = document.getElementById('bgOpenCheckbox');
 
 // Restore checkbox state from localStorage (synchronous, no flicker)
 tempChatCheckbox.checked = localStorage.getItem('tempChat') !== 'false';
 forceAIStudioCheckbox.checked = localStorage.getItem('forceAIStudio') === 'true';
+bgOpenCheckbox.checked = localStorage.getItem('bgOpen') === 'true';
 
 // Save checkbox state on change
 tempChatCheckbox.addEventListener('change', () => {
@@ -29,6 +31,10 @@ function updateRunBtnText() {
 forceAIStudioCheckbox.addEventListener('change', () => {
   localStorage.setItem('forceAIStudio', forceAIStudioCheckbox.checked);
   updateRunBtnText();
+});
+
+bgOpenCheckbox.addEventListener('change', () => {
+  localStorage.setItem('bgOpen', bgOpenCheckbox.checked);
 });
 
 // Set initial button text based on restored checkbox state
@@ -273,8 +279,10 @@ async function run() {
       });
 
       // Switch to ChatGPT tab
-      await chrome.tabs.update(chatgptTabId, { active: true });
-      setStatus('已切换到 ChatGPT 页面。');
+      if (!bgOpenCheckbox.checked) {
+        await chrome.tabs.update(chatgptTabId, { active: true });
+      }
+      setStatus(bgOpenCheckbox.checked ? '已在后台打开 ChatGPT 页面。' : '已切换到 ChatGPT 页面。');
     } else {
       // Audio fallback or forced AI Studio
       setStatus('正在获取音频信息...');
@@ -298,8 +306,10 @@ async function run() {
         tempChat: tempChatCheckbox.checked
       });
 
-      await chrome.tabs.update(aiStudioTabId, { active: true });
-      setStatus('已切换到 AI Studio 页面。');
+      if (!bgOpenCheckbox.checked) {
+        await chrome.tabs.update(aiStudioTabId, { active: true });
+      }
+      setStatus(bgOpenCheckbox.checked ? '已在后台打开 AI Studio 页面。' : '已切换到 AI Studio 页面。');
     }
   } catch (e) {
     showError(`错误：${e.message}`);
