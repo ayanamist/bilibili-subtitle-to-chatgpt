@@ -148,65 +148,36 @@
     });
   }
 
-  // After clicking send, if bgOpen, watch for the new response turn and
-  // scroll its top into view the moment ChatGPT pushes it above the viewport.
-  // ChatGPT then treats this as a user scroll and stops its own auto-scroll.
-  function watchAndScrollToResponseTop() {
-    function findScrollContainer() {
-      let el = document.querySelector('main');
-      while (el) {
-        const style = getComputedStyle(el);
-        if (style.overflowY === 'auto' || style.overflowY === 'scroll') return el;
-        el = el.parentElement;
-      }
-      return null;
+  // After clicking send, if bgOpen and the tab is in the background,
+  // scroll the new response turn into view the first time the user switches to this tab.
+  // If the tab is already visible, do nothing.
+  function scrollToResponseOnTabFocus() {
+    console.log('[ext] scrollToResponseOnTabFocus called, visibilityState=', document.visibilityState);
+    if (document.visibilityState === 'visible') {
+      console.log('[ext] tab already visible, doing nothing');
+      return;
     }
 
-    function offsetRelativeTo(el, ancestor) {
-      let top = 0;
-      while (el && el !== ancestor) {
-        top += el.offsetTop;
-        el = el.offsetParent;
+    function onVisibilityChange() {
+      console.log('[ext] visibilitychange fired, visibilityState=', document.visibilityState);
+      if (document.visibilityState !== 'visible') return;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      
+      let article = document.querySelector('#thread article.text-token-text-primary.w-full:nth-child(2)');
+      if (article) {
+        console.log("[ext] start scroll", article)
+        article.scrollIntoView({"behavior": "instant", "block": "start"});
+        setTimeout(function() {
+          // 滚动2次，第一次不灵
+          article.scrollIntoView({"behavior": "instant", "block": "start"});
+        }, 200)
+      } else {
+        console.log('[ext] not found response')
       }
-      return top;
     }
 
-    const sc = findScrollContainer();
-    if (!sc) return;
-
-    // Record existing turns so we can detect the new one
-    const existingTurns = new Set(document.querySelectorAll('[data-testid^="conversation-turn"]'));
-
-    const mo = new MutationObserver(() => {
-      const allTurns = document.querySelectorAll('[data-testid^="conversation-turn"]');
-      let newTurn = null;
-      for (const t of allTurns) {
-        if (!existingTurns.has(t)) { newTurn = t; break; }
-      }
-      if (!newTurn) return;
-      mo.disconnect();
-
-      let done = false;
-      function onScroll() {
-        if (done) return;
-        const turnTop = offsetRelativeTo(newTurn, sc);
-        if (turnTop < sc.scrollTop) {
-          done = true;
-          sc.removeEventListener('scroll', onScroll);
-          sc.scrollTop = Math.max(0, turnTop - 20);
-        }
-      }
-      sc.addEventListener('scroll', onScroll);
-      setTimeout(() => {
-        if (!done) {
-          done = true;
-          sc.removeEventListener('scroll', onScroll);
-        }
-      }, 60000);
-    });
-
-    mo.observe(document.querySelector('main') || document.body, { childList: true, subtree: true });
-    setTimeout(() => mo.disconnect(), 60000);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    console.log('[ext] visibilitychange listener registered');
   }
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -228,7 +199,7 @@
           }
           showStatus('正在发送...');
           await clickSend();
-          if (msg.bgOpen) watchAndScrollToResponseTop();
+          if (msg.bgOpen) scrollToResponseOnTabFocus();
           hideStatus();
         } catch (e) {
           console.error('CHATGPT_PREPARE_PROMPT failed:', e);
