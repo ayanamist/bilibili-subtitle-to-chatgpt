@@ -180,6 +180,16 @@
     });
   }
 
+  // Rename the conversation via ChatGPT internal API.
+  async function renameConversationViaAPI(conversationId, title) {
+    const resp = await fetch(`/backend-api/conversation/${conversationId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
+    if (!resp.ok) throw new Error(`API 重命名失败：HTTP ${resp.status}`);
+  }
+
   // Rename the active conversation via the sidebar UI (options menu → 重命名).
   // Throws on failure so the caller can surface an error.
   async function renameConversationViaUI(conversationId, title) {
@@ -296,6 +306,12 @@
             if (!conversationId) {
               showError('修改会话名失败：等待对话 ID 超时');
               return;
+            }
+            try {
+                await renameConversationViaAPI(conversationId, msg.videoTitle);
+                document.title = msg.videoTitle;
+            } catch (e) {
+                console.warn('[ext] renameConversationViaAPI failed:', e);
             }
             try {
               await renameConversationViaUI(conversationId, msg.videoTitle);
