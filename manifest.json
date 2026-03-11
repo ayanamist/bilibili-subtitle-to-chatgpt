@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bilibili Subtitle to AI",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "提取 B 站字幕或音频并发送到AI进行总结",
   "background": {
     "service_worker": "background.js"
@@ -9,10 +9,21 @@
   "permissions": [
     "activeTab",
     "tabs",
-    "storage"
+    "storage",
+    "permissions"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://api.bilibili.com/*",
+    "https://aisubtitle.hdslb.com/*",
+    "https://aistudio.google.com/*",
+    "https://*.bilivideo.com/*",
+    "https://*.bilivideo.cn/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -24,23 +35,40 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.bilibili.com/video/*"],
-      "js": ["bilibili-content-main.js"],
+      "matches": [
+        "https://www.bilibili.com/video/*"
+      ],
+      "js": [
+        "bilibili-content-main.js"
+      ],
       "world": "MAIN",
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://www.bilibili.com/video/*"],
-      "js": ["bilibili-content.js"],
+      "matches": [
+        "https://www.bilibili.com/video/*"
+      ],
+      "js": [
+        "bilibili-content.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
-      "js": ["chatgpt-content.js"]
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "chatgpt-content.js"
+      ]
     },
     {
-      "matches": ["https://aistudio.google.com/*"],
-      "js": ["aistudio-content.js"],
+      "matches": [
+        "https://aistudio.google.com/*"
+      ],
+      "js": [
+        "aistudio-content.js"
+      ],
       "run_at": "document_start"
     }
   ],
