@@ -174,7 +174,7 @@
         const match = location.pathname.match(/^\/c\/([0-9a-f-]{36})/i);
         if (match && location.pathname !== initialPath) { resolve(match[1]); return; }
         if (Date.now() > deadline) { resolve(null); return; }
-        setTimeout(check, 500);
+        setTimeout(check, 200);
       }
       check();
     });
@@ -195,19 +195,18 @@
   async function renameConversationViaUI(conversationId, title) {
     // Locate by the conversation-specific data attribute — position in the list is unreliable.
     // The sidebar entry may not appear immediately after conversation creation — poll for it.
+    showStatus('正在等待侧边栏会话条目出现...');
     const optionsBtn = await new Promise((resolve) => {
-      const deadline = Date.now() + 15000;
       function check() {
         const btn = document.querySelector(`button[data-conversation-options-trigger="${conversationId}"]`);
         if (btn) { resolve(btn); return; }
-        if (Date.now() > deadline) { resolve(null); return; }
-        setTimeout(check, 300);
+        setTimeout(check, 200);
       }
       check();
     });
-    if (!optionsBtn) throw new Error('找不到会话选项按钮（侧边栏未在 15 秒内出现）');
 
     // Open the dropdown menu with pointer events (React needs these)
+    showStatus('正在打开会话选项菜单...');
     for (const type of ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
       const rect = optionsBtn.getBoundingClientRect();
       optionsBtn.dispatchEvent(new PointerEvent(type, {
@@ -222,25 +221,26 @@
     const allItems = [...document.querySelectorAll('[role="menuitem"]')];
     const renameItem = allItems.find(el => /^\s*(重命名|Rename)\s*$/i.test(el.textContent));
     if (!renameItem) throw new Error('下拉菜单中找不到重命名选项（未匹配到"重命名"或"Rename"）');
+    showStatus('正在点击重命名选项...');
     renameItem.click();
 
     // Wait for the title-editor input to appear (up to 30 seconds)
+    showStatus('正在等待重命名输入框出现...');
     const input = await new Promise((resolve) => {
-      const deadline = Date.now() + 30000;
       function check() {
         const el = document.querySelector('input[name="title-editor"]');
         if (el) { resolve(el); return; }
-        if (Date.now() > deadline) { resolve(null); return; }
-        setTimeout(check, 100);
+        setTimeout(check, 200);
       }
       check();
     });
-    if (!input) throw new Error('找不到标题编辑框');
+    showStatus('正在输入新会话名称...');
     const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
     nativeSetter.call(input, title);
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
     await new Promise(r => setTimeout(r, 100));
+    showStatus('正在提交新会话名称...');
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
     input.dispatchEvent(new KeyboardEvent('keyup',  { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
     await new Promise(r => setTimeout(r, 300));
@@ -313,6 +313,7 @@
             } catch (e) {
                 console.warn('[ext] renameConversationViaAPI failed:', e);
             }
+            showStatus('正在通过侧边栏 UI 修改会话名...');
             try {
               await renameConversationViaUI(conversationId, msg.videoTitle);
             } catch (e) {
