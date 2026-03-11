@@ -89,30 +89,55 @@ function updateTestBtnState() {
 selfHostedApiUrlInput.addEventListener('input', updateTestBtnState);
 selfHostedApiTokenInput.addEventListener('input', updateTestBtnState);
 
+// 将 URL 转换为 host permission 格式，如 http://localhost:8080/ → http://localhost:8080/*
+function urlToHostPermission(url) {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}/*`;
+  } catch {
+    return null;
+  }
+}
+
+// 申请对指定 URL 的访问权限
+async function requestHostPermission(url) {
+  const origin = urlToHostPermission(url);
+  if (!origin) return false;
+  return chrome.permissions.request({ origins: [origin] });
+}
+
 // 保存自建服务配置
 saveSelfHostedBtn.addEventListener('click', async () => {
   const url = selfHostedApiUrlInput.value.trim();
   const token = selfHostedApiTokenInput.value.trim();
 
-  await chrome.storage.local.set({
-    selfHostedApiUrl: url,
-    selfHostedApiToken: token,
-  });
-
   // 如果选择了自建服务但 URL 为空，切换回 AI Studio
   if (radioSelfHosted.checked && !url) {
-    radioAIStudio.checked = true;
     await chrome.storage.local.set({ transcribeService: 'aistudio' });
+    radioAIStudio.checked = true;
     updateSelfHostedSectionVisibility();
+    await chrome.storage.local.set({ selfHostedApiUrl: url, selfHostedApiToken: token });
     flashStatus(selfHostedSaveStatus, '已保存（已切换回 AI Studio）');
-  } else {
-    // 如果选择了自建服务，保存服务来源
-    if (radioSelfHosted.checked) {
-      await chrome.storage.local.set({ transcribeService: 'selfhosted' });
-    }
-    flashStatus(selfHostedSaveStatus, '已保存');
+    updateTestBtnState();
+    return;
   }
 
+  // 如果有 URL，先申请权限，失败则拒绝保存
+  if (url) {
+    const granted = await requestHostPermission(url);
+    if (!granted) {
+      flashStatus(selfHostedSaveStatus, '权限未授予，保存失败', true);
+      updateTestBtnState();
+      return;
+    }
+  }
+
+  // 权限已获取，写入配置
+  await chrome.storage.local.set({ selfHostedApiUrl: url, selfHostedApiToken: token });
+  if (radioSelfHosted.checked) {
+    await chrome.storage.local.set({ transcribeService: 'selfhosted' });
+  }
+  flashStatus(selfHostedSaveStatus, '已保存');
   updateTestBtnState();
 });
 
@@ -122,6 +147,15 @@ testServiceBtn.addEventListener('click', async () => {
   const token = selfHostedApiTokenInput.value.trim();
 
   if (!url || !token) return;
+
+  // 先申请权限，失败则中止
+  const granted = await requestHostPermission(url);
+  if (!granted) {
+    testResult.className = 'test-result error';
+    testResult.textContent = '✗ 权限未授予，无法测试';
+    testResult.style.display = 'block';
+    return;
+  }
 
   testServiceBtn.disabled = true;
   testResult.className = 'test-result';
