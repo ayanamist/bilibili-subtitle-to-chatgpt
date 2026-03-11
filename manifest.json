@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bilibili Subtitle to AI",
-  "version": "2.3.0",
+  "version": "3.0.0",
   "description": "提取 B 站字幕或音频并发送到AI进行总结",
   "background": {
     "service_worker": "background.js"
@@ -12,13 +12,7 @@
     "storage"
   ],
   "host_permissions": [
-    "https://chatgpt.com/*",
-    "https://chat.openai.com/*",
-    "https://api.bilibili.com/*",
-    "https://aisubtitle.hdslb.com/*",
-    "https://aistudio.google.com/*",
-    "https://*.bilivideo.com/*",
-    "https://*.bilivideo.cn/*"
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",

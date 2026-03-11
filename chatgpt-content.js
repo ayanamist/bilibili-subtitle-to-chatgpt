@@ -214,9 +214,9 @@
     if (!renameItem) throw new Error('下拉菜单中找不到重命名选项（未匹配到"重命名"或"Rename"）');
     renameItem.click();
 
-    // Wait for the title-editor input to appear (up to 3 seconds)
+    // Wait for the title-editor input to appear (up to 30 seconds)
     const input = await new Promise((resolve) => {
-      const deadline = Date.now() + 3000;
+      const deadline = Date.now() + 30000;
       function check() {
         const el = document.querySelector('input[name="title-editor"]');
         if (el) { resolve(el); return; }

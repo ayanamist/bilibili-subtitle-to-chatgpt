@@ -1,0 +1,19 @@
+# 服务监听地址，默认 :8080
+addr = ":8080"
+
+# Bearer Token 鉴权（必填）
+token = "your-secret-token"
+
+# 转写程序命令（必填），支持两种格式：
+
+# 格式一：字符串（支持带空格的路径，按 shell 规则拆分）
+# exec = "C:\\Program Files\\whisper\\whisper.exe --model large --output_format srt"
+
+# 格式二：字符串数组（推荐，避免路径空格问题）
+exec = ["whisper", "--model", "large", "--output_format", "srt"]
+
+# 允许的音频文件扩展名（不需要填小数点），默认 ["m4a", "m4s"]
+# allow_extensions = ["m4a", "m4s"]
+
+# 转写程序的工作目录（可选，默认继承服务进程的工作目录）
+# cwd = "C:\\Users\\user\\whisper"

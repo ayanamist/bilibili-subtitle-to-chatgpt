@@ -20,6 +20,12 @@ html, body {
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
+  margin-bottom: 8px;
+}
+.section-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 20px 0;
 }
 .prompt-area {
   display: flex;
@@ -47,6 +53,7 @@ html, body {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 .save-btn {
   background: var(--accent);
@@ -73,6 +80,19 @@ html, body {
   transition: opacity 0.15s;
 }
 .reset-btn:hover { opacity: 0.7; }
+.test-btn {
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--accent);
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  padding: 8px 20px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.test-btn:hover { opacity: 0.7; }
+.test-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .save-status {
   font-family: 'DM Mono', monospace;
   font-size: 12px;
@@ -81,10 +101,112 @@ html, body {
   transition: opacity 0.2s;
 }
 .save-status.show { opacity: 1; }
+.save-status.error { color: #e53e3e; }
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.form-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.form-input {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  width: 100%;
+  box-sizing: border-box;
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.radio-label input[type="radio"] {
+  cursor: pointer;
+}
+.test-result {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  display: none;
+  margin-top: 4px;
+}
+.test-result.success {
+  display: block;
+  background: #f0fff4;
+  color: #276749;
+  border: 1px solid #9ae6b4;
+}
+.test-result.error {
+  display: block;
+  background: #fff5f5;
+  color: #c53030;
+  border: 1px solid #feb2b2;
+}
 </style>
 </head>
 <body>
 <div class="container">
+
+  <!-- 音频转写服务配置 -->
+  <div class="section-title">音频转写服务</div>
+  <div class="radio-group">
+    <label class="radio-label">
+      <input type="radio" name="transcribeService" value="aistudio" id="radioAIStudio">
+      <span>AI Studio</span>
+    </label>
+    <label class="radio-label">
+      <input type="radio" name="transcribeService" value="selfhosted" id="radioSelfHosted">
+      <span>自建服务</span>
+      <a href="https://github.com/ayanamist/bilibili-subtitle-to-chatgpt#readme" target="_blank" style="font-size:12px;color:var(--accent);text-decoration:none;margin-left:4px;">使用说明</a>
+    </label>
+  </div>
+
+  <!-- 自建字幕服务配置 -->
+  <div id="selfHostedSection">
+    <div class="section-title">自建字幕服务</div>
+    <div class="form-group">
+      <label class="form-label" for="selfHostedApiUrl">API 地址</label>
+      <input class="form-input" type="text" id="selfHostedApiUrl" placeholder="http://localhost:8080">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="selfHostedApiToken">Token</label>
+      <input class="form-input" type="password" id="selfHostedApiToken" placeholder="your-secret-token">
+    </div>
+    <div class="btn-row">
+      <button class="save-btn" id="saveSelfHostedBtn">保存</button>
+      <button class="test-btn" id="testServiceBtn" disabled>测试服务</button>
+      <span class="save-status" id="selfHostedSaveStatus">已保存</span>
+    </div>
+    <div class="test-result" id="testResult"></div>
+  </div>
+
+  <hr class="section-divider">
+
+  <!-- 自定义提示词 -->
   <div class="section-title">自定义提示词</div>
   <div class="prompt-area">
     <textarea class="prompt-textarea" id="promptTextarea"></textarea>
@@ -94,6 +216,7 @@ html, body {
       <span class="save-status" id="saveStatus">已保存</span>
     </div>
   </div>
+
 </div>
 <script src="options.js"></script>
 </body>
