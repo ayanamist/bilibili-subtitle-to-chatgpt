@@ -11,12 +11,27 @@
         'position:fixed;top:16px;right:16px;z-index:999999;' +
         'background:#10a37f;color:#fff;padding:10px 16px;border-radius:8px;' +
         'font-size:14px;font-family:system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);' +
-        'max-width:360px;line-height:1.4;transition:opacity .3s;';
+        'max-width:360px;line-height:1.4;transition:opacity .3s;' +
+        'display:flex;align-items:flex-start;gap:10px;';
+
+      const textNode = document.createElement('span');
+      textNode.className = '__ext-status-text';
+      textNode.style.flex = '1';
+
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '✕';
+      closeBtn.style.cssText =
+        'background:none;border:none;color:inherit;cursor:pointer;' +
+        'font-size:14px;line-height:1;padding:0;opacity:.8;flex-shrink:0;';
+      closeBtn.addEventListener('click', hideStatus);
+
+      statusOverlay.appendChild(textNode);
+      statusOverlay.appendChild(closeBtn);
       document.body.appendChild(statusOverlay);
     }
     statusOverlay.style.background = '#10a37f';
     statusOverlay.style.opacity = '1';
-    statusOverlay.textContent = msg;
+    statusOverlay.querySelector('.__ext-status-text').textContent = msg;
   }
 
   function showError(msg) {
@@ -148,9 +163,84 @@
     });
   }
 
-  // After clicking send, if bgOpen and the tab is in the background,
-  // scroll the new response turn into view the first time the user switches to this tab.
-  // If the tab is already visible, do nothing.
+  // Wait for the URL to switch to a new /c/{uuid} path.
+  // Returns the conversation ID, or null on timeout (e.g. temporary chat).
+  function waitForConversationId(timeoutMs = 30000) {
+    return new Promise((resolve) => {
+      const deadline = Date.now() + timeoutMs;
+      const initialPath = location.pathname;
+
+      function check() {
+        const match = location.pathname.match(/^\/c\/([0-9a-f-]{36})/i);
+        if (match && location.pathname !== initialPath) { resolve(match[1]); return; }
+        if (Date.now() > deadline) { resolve(null); return; }
+        setTimeout(check, 500);
+      }
+      check();
+    });
+  }
+
+  // Rename the active conversation via the sidebar UI (options menu → 重命名).
+  // Throws on failure so the caller can surface an error.
+  async function renameConversationViaUI(conversationId, title) {
+    // Locate by the conversation-specific data attribute — position in the list is unreliable.
+    // The sidebar entry may not appear immediately after conversation creation — poll for it.
+    const optionsBtn = await new Promise((resolve) => {
+      const deadline = Date.now() + 15000;
+      function check() {
+        const btn = document.querySelector(`button[data-conversation-options-trigger="${conversationId}"]`);
+        if (btn) { resolve(btn); return; }
+        if (Date.now() > deadline) { resolve(null); return; }
+        setTimeout(check, 300);
+      }
+      check();
+    });
+    if (!optionsBtn) throw new Error('找不到会话选项按钮（侧边栏未在 15 秒内出现）');
+
+    // Open the dropdown menu with pointer events (React needs these)
+    for (const type of ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      const rect = optionsBtn.getBoundingClientRect();
+      optionsBtn.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, isPrimary: true,
+        clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2,
+      }));
+    }
+    await new Promise(r => setTimeout(r, 400));
+
+    // Click the rename menu item.
+    // Match by visible text to support multiple UI languages (zh: 重命名, en: Rename).
+    const allItems = [...document.querySelectorAll('[role="menuitem"]')];
+    const renameItem = allItems.find(el => /^\s*(重命名|Rename)\s*$/i.test(el.textContent));
+    if (!renameItem) throw new Error('下拉菜单中找不到重命名选项（未匹配到"重命名"或"Rename"）');
+    renameItem.click();
+
+    // Wait for the title-editor input to appear (up to 3 seconds)
+    const input = await new Promise((resolve) => {
+      const deadline = Date.now() + 3000;
+      function check() {
+        const el = document.querySelector('input[name="title-editor"]');
+        if (el) { resolve(el); return; }
+        if (Date.now() > deadline) { resolve(null); return; }
+        setTimeout(check, 100);
+      }
+      check();
+    });
+    if (!input) throw new Error('找不到标题编辑框');
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    nativeSetter.call(input, title);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 100));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keyup',  { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+    await new Promise(r => setTimeout(r, 300));
+
+    // Verify the input is gone (renamed successfully)
+    if (document.querySelector('input[name="title-editor"]')) throw new Error('重命名操作未能完成');
+  }
+
+  // After clicking send, scroll the new response turn into view the first time
+  // the user switches to this tab. If the tab is already visible, do nothing.
   function scrollToResponseOnTabFocus() {
     console.log('[ext] scrollToResponseOnTabFocus called, visibilityState=', document.visibilityState);
     if (document.visibilityState === 'visible') {
@@ -200,6 +290,21 @@
           showStatus('正在发送...');
           await clickSend();
           if (msg.bgOpen) scrollToResponseOnTabFocus();
+          // Rename the new conversation to the video title via the sidebar UI (skip for temporary chats)
+          if (msg.videoTitle && !msg.tempChat) {
+            const conversationId = await waitForConversationId();
+            if (!conversationId) {
+              showError('修改会话名失败：等待对话 ID 超时');
+              return;
+            }
+            try {
+              await renameConversationViaUI(conversationId, msg.videoTitle);
+            } catch (e) {
+              console.error('[ext] renameConversationViaUI failed:', e);
+              showError(`修改会话名失败：${e.message}`);
+              return;
+            }
+          }
           hideStatus();
         } catch (e) {
           console.error('CHATGPT_PREPARE_PROMPT failed:', e);

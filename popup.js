@@ -93,7 +93,8 @@ async function fetchVideoInfo(pageUrl) {
     throw new Error(`未找到第 ${pageNum} P 的视频信息`);
   }
 
-  return { bvid, aid, cid };
+  const title = viewData?.data?.title || '';
+  return { bvid, aid, cid, title };
 }
 
 // Fetch subtitle for given aid/cid, returns subtitle body or null
@@ -175,7 +176,7 @@ async function run() {
     }
 
     // Get video info (use cache from init if available)
-    const { bvid, aid, cid } = cachedVideoInfo || await fetchVideoInfo(pageUrl);
+    const { bvid, aid, cid, title: videoTitle } = cachedVideoInfo || await fetchVideoInfo(pageUrl);
 
     // Try fetching subtitles (skip if forced to use AI Studio)
     let subtitle = null;
@@ -216,7 +217,7 @@ async function run() {
     if (!useAIStudio) {
       // Subtitle flow — send to ChatGPT
       const srtContent = subtitleToSrt(subtitle.body);
-      const title = tab.title || 'bilibili-subtitle';
+      const title = videoTitle || tab.title || 'bilibili-subtitle';
       const fileName = bvid ? `${bvid}_${title}.srt` : `${title}.srt`;
 
       port.postMessage({
@@ -227,6 +228,7 @@ async function run() {
         tempChat: tempChatCheckbox.checked,
         file: { name: fileName, content: srtContent },
         prompt: promptText,
+        videoTitle,
       });
     } else {
       // Audio fallback or forced AI Studio

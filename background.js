@@ -63,7 +63,7 @@ async function downloadAudio(biliTabId, audioUrls) {
 
 // Main task handler — runs in the service worker, independent of popup lifecycle
 async function handleTask(msg, notify) {
-  const { taskType, openerTabIndex, bgOpen, tempChat, file, audioUrls, biliTabId, prompt } = msg;
+  const { taskType, openerTabIndex, bgOpen, tempChat, file, audioUrls, biliTabId, prompt, videoTitle } = msg;
   let targetTabId = null;
 
   try {
@@ -95,6 +95,8 @@ async function handleTask(msg, notify) {
         file,
         prompt,
         bgOpen,
+        tempChat,
+        videoTitle,
       });
 
       notify('DONE', bgOpen ? '已在后台打开 ChatGPT 页面。' : '已切换到 ChatGPT 页面。');
