@@ -182,9 +182,18 @@
 
   // Rename the conversation via ChatGPT internal API.
   async function renameConversationViaAPI(conversationId, title) {
+    const sessionResp = await fetch('/api/auth/session');
+    if (!sessionResp.ok) throw new Error(`获取 session token 失败：HTTP ${sessionResp.status}`);
+    const session = await sessionResp.json();
+    const token = session?.accessToken;
+    if (!token) throw new Error('session 中未找到 accessToken');
+
     const resp = await fetch(`/backend-api/conversation/${conversationId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
       body: JSON.stringify({ title }),
     });
     if (!resp.ok) throw new Error(`API 重命名失败：HTTP ${resp.status}`);
