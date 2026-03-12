@@ -180,82 +180,130 @@
     });
   }
 
-  // Rename the conversation via ChatGPT internal API.
-  async function renameConversationViaAPI(conversationId, title) {
+  // 获取 ChatGPT session token（带缓存，5 分钟内复用）
+  let _cachedToken = null;
+  let _cachedTokenExpiry = 0;
+  async function getAccessToken() {
+    if (_cachedToken && Date.now() < _cachedTokenExpiry) {
+      return _cachedToken;
+    }
     const sessionResp = await fetch('/api/auth/session');
     if (!sessionResp.ok) throw new Error(`获取 session token 失败：HTTP ${sessionResp.status}`);
     const session = await sessionResp.json();
     const token = session?.accessToken;
     if (!token) throw new Error('session 中未找到 accessToken');
-
-    const resp = await fetch(`/backend-api/conversation/${conversationId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ title }),
-    });
-    if (!resp.ok) throw new Error(`API 重命名失败：HTTP ${resp.status}`);
+    _cachedToken = token;
+    _cachedTokenExpiry = Date.now() + 5 * 60 * 1000; // 缓存 5 分钟
+    return token;
   }
 
-  // Rename the active conversation via the sidebar UI (options menu → 重命名).
-  // Throws on failure so the caller can surface an error.
-  async function renameConversationViaUI(conversationId, title) {
-    // Locate by the conversation-specific data attribute — position in the list is unreliable.
-    // The sidebar entry may not appear immediately after conversation creation — poll for it.
-    showStatus('正在等待侧边栏会话条目出现...');
-    const optionsBtn = await new Promise((resolve) => {
-      function check() {
-        const btn = document.querySelector(`button[data-conversation-options-trigger="${conversationId}"]`);
-        if (btn) { resolve(btn); return; }
-        setTimeout(check, 200);
-      }
-      check();
-    });
+  // 新会话的默认标题
+  const DEFAULT_TITLE = 'New chat';
 
-    // Open the dropdown menu with pointer events (React needs these)
-    showStatus('正在打开会话选项菜单...');
-    for (const type of ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
-      const rect = optionsBtn.getBoundingClientRect();
-      optionsBtn.dispatchEvent(new PointerEvent(type, {
-        bubbles: true, cancelable: true, isPrimary: true,
-        clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2,
-      }));
+  // 检查对话中是否存在至少一个已完成的助手回复。
+  // 遍历所有 mapping 节点而非只看 current_node，
+  // 避免轮询间隔中用户又提交新问题导致 current_node 指向未完成的新回复。
+  function hasAnyFinishedAssistantResponse(data) {
+    if (!data.mapping) return false;
+    return Object.values(data.mapping).some(node => {
+      const msg = node.message;
+      return msg
+        && msg.author?.role === 'assistant'
+        && msg.status === 'finished_successfully'
+        && msg.end_turn === true;
+    });
+  }
+
+  // 等待 ChatGPT 自动标题生成完成。
+  // ChatGPT 服务端在流式响应中会推送 title_generation 事件来自动命名新会话，
+  // 如果我们在该事件之前就 PATCH 了标题，会被覆盖。
+  // 策略：
+  //   1. 标题已从 "New chat" 变为其他值 → 自动标题已生成，直接返回。
+  //   2. 标题仍为 "New chat"，但助手回复已完成（finished_successfully + end_turn）
+  //      → 服务端标题生成可能有延迟，再多等几轮给它一个窗口期，
+  //        如果窗口期内标题仍未变化，则放弃等待。
+  async function waitForTitleGeneration(conversationId, token) {
+    // 回复完成后额外等待的轮数（每轮 2 秒）
+    const GRACE_ROUNDS = 3;
+    let graceCountdown = -1; // -1 表示尚未进入宽限期
+
+    while (true) {
+      try {
+        const resp = await fetch(`/backend-api/conversation/${conversationId}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.title && data.title !== DEFAULT_TITLE) {
+            console.log('[ext] ChatGPT 自动标题已生成:', data.title);
+            return;
+          }
+          // 标题仍为默认值，检查助手回复是否已完成
+          if (hasAnyFinishedAssistantResponse(data)) {
+            if (graceCountdown < 0) {
+              // 刚检测到回复完成，进入宽限期
+              graceCountdown = GRACE_ROUNDS;
+              console.log('[ext] 助手回复已完成，标题仍为默认值，进入宽限期等待标题生成...');
+            } else {
+              graceCountdown--;
+            }
+            if (graceCountdown <= 0) {
+              console.log('[ext] 宽限期结束，标题仍为默认值，放弃等待标题生成');
+              return;
+            }
+            console.log(`[ext] 宽限期剩余 ${graceCountdown} 轮...`);
+          } else {
+            console.log('[ext] 当前标题仍为默认值，助手回复尚未完成，继续等待...');
+          }
+        }
+      } catch (e) {
+        console.warn('[ext] waitForTitleGeneration 轮询出错:', e);
+      }
+      await new Promise(r => setTimeout(r, 2000));
     }
-    await new Promise(r => setTimeout(r, 400));
+  }
 
-    // Click the rename menu item.
-    // Match by visible text to support multiple UI languages (zh: 重命名, en: Rename).
-    const allItems = [...document.querySelectorAll('[role="menuitem"]')];
-    const renameItem = allItems.find(el => /^\s*(重命名|Rename)\s*$/i.test(el.textContent));
-    if (!renameItem) throw new Error('下拉菜单中找不到重命名选项（未匹配到"重命名"或"Rename"）');
-    showStatus('正在点击重命名选项...');
-    renameItem.click();
+  // Rename the conversation via ChatGPT internal API.
+  // 重命名后会再确认一次，如果被服务端自动标题覆盖则重试。
+  async function renameConversationViaAPI(conversationId, title) {
+    const token = await getAccessToken();
 
-    // Wait for the title-editor input to appear (up to 30 seconds)
-    showStatus('正在等待重命名输入框出现...');
-    const input = await new Promise((resolve) => {
-      function check() {
-        const el = document.querySelector('input[name="title-editor"]');
-        if (el) { resolve(el); return; }
-        setTimeout(check, 200);
+    // 先等待 ChatGPT 自动标题生成完成，避免被覆盖
+    await waitForTitleGeneration(conversationId, token);
+
+    async function patchTitle() {
+      const resp = await fetch(`/backend-api/conversation/${conversationId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ title }),
+      });
+      if (!resp.ok) throw new Error(`API 重命名失败：HTTP ${resp.status}`);
+    }
+
+    await patchTitle();
+
+    // 确认标题是否生效（服务端 title_generation 可能在我们 PATCH 之后才到达）
+    // 等待一小段时间后检查，如果被覆盖则重试一次
+    await new Promise(r => setTimeout(r, 3000));
+    try {
+      const checkResp = await fetch(`/backend-api/conversation/${conversationId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (checkResp.ok) {
+        const data = await checkResp.json();
+        if (data.title !== title) {
+          console.log(`[ext] 标题被覆盖为 "${data.title}"，重新设置为 "${title}"`);
+          await patchTitle();
+        } else {
+          console.log('[ext] 标题确认生效:', title);
+        }
       }
-      check();
-    });
-    showStatus('正在输入新会话名称...');
-    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    nativeSetter.call(input, title);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    await new Promise(r => setTimeout(r, 100));
-    showStatus('正在提交新会话名称...');
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-    input.dispatchEvent(new KeyboardEvent('keyup',  { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
-    await new Promise(r => setTimeout(r, 300));
-
-    // Verify the input is gone (renamed successfully)
-    if (document.querySelector('input[name="title-editor"]')) throw new Error('重命名操作未能完成');
+    } catch (e) {
+      console.warn('[ext] 标题确认检查出错:', e);
+    }
   }
 
   // After clicking send, scroll the new response turn into view the first time
@@ -316,19 +364,14 @@
               showError('修改会话名失败：等待对话 ID 超时');
               return;
             }
+            showStatus('正在通过 API 修改会话名...');
             try {
                 await renameConversationViaAPI(conversationId, msg.videoTitle);
                 document.title = msg.videoTitle;
             } catch (e) {
-                console.warn('[ext] renameConversationViaAPI failed:', e);
-            }
-            showStatus('正在通过侧边栏 UI 修改会话名...');
-            try {
-              await renameConversationViaUI(conversationId, msg.videoTitle);
-            } catch (e) {
-              console.error('[ext] renameConversationViaUI failed:', e);
-              showError(`修改会话名失败：${e.message}`);
-              return;
+                console.error('[ext] renameConversationViaAPI failed:', e);
+                showError(`修改会话名失败：${e.message}`);
+                return;
             }
           }
           hideStatus();
