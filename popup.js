@@ -256,6 +256,7 @@ async function run() {
         file: { name: fileName, content: srtContent },
         prompt: promptText,
         videoTitle,
+        bvid,
       });
     } else if (transcribeService === 'selfhosted') {
       // 无字幕 + 自建服务 → 音频转写并发送到 ChatGPT

@@ -347,6 +347,7 @@
       // Reply immediately so popup can switch tab without waiting
       sendResponse({ ok: true });
       (async () => {
+        const bvidPrefix = msg.bvid ? `[${msg.bvid}] ` : '';
         try {
           showStatus('正在添加字幕文件...');
           await attachFile(msg.file.name, msg.file.content);
@@ -361,7 +362,7 @@
           if (msg.videoTitle && !msg.tempChat) {
             const conversationId = await waitForConversationId();
             if (!conversationId) {
-              showError('修改会话名失败：等待对话 ID 超时');
+              showError(`${bvidPrefix}修改会话名失败：等待对话 ID 超时`);
               return;
             }
             showStatus('正在通过 API 修改会话名...');
@@ -370,14 +371,14 @@
                 document.title = msg.videoTitle;
             } catch (e) {
                 console.error('[ext] renameConversationViaAPI failed:', e);
-                showError(`修改会话名失败：${e.message}`);
+                showError(`${bvidPrefix}修改会话名失败：${e.message}`);
                 return;
             }
           }
           hideStatus();
         } catch (e) {
           console.error('CHATGPT_PREPARE_PROMPT failed:', e);
-          showError(`错误：${e.message}`);
+          showError(`${bvidPrefix}错误：${e.message}`);
         }
       })();
       return;

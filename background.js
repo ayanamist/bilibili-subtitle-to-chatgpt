@@ -84,7 +84,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // Main task handler — runs in the service worker, independent of popup lifecycle
 async function handleTask(msg, notify) {
-  const { taskType, openerTabIndex, bgOpen, tempChat, file, audioUrls, biliTabId, prompt, videoTitle } = msg;
+  const { taskType, openerTabIndex, bgOpen, tempChat, file, audioUrls, biliTabId, prompt, videoTitle, bvid } = msg;
   let targetTabId = null;
 
   try {
@@ -118,6 +118,7 @@ async function handleTask(msg, notify) {
         bgOpen,
         tempChat,
         videoTitle,
+        bvid,
       });
 
       notify('DONE', bgOpen ? '已在后台打开 ChatGPT 页面。' : '已切换到 ChatGPT 页面。');
@@ -214,6 +215,7 @@ async function sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabIndex, 
       bgOpen,
       tempChat,
       videoTitle,
+      bvid,
     });
     return { ok: true };
   } catch (e) {
