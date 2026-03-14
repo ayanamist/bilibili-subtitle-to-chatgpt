@@ -1,5 +1,16 @@
 'use strict';
 
+// Resolve the current index of a tab by its stable ID.
+// Tab IDs never change, but indices shift when tabs are opened/closed/moved.
+async function getTabIndex(tabId) {
+  try {
+    const t = await chrome.tabs.get(tabId);
+    return t.index;
+  } catch (e) {
+    return 0;
+  }
+}
+
 // Wait for a tab to fully load (status=complete) + extra SPA hydration delay
 function waitForTabLoad(tabId, timeout = 30000) {
   return new Promise((resolve, reject) => {
@@ -84,7 +95,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // Main task handler — runs in the service worker, independent of popup lifecycle
 async function handleTask(msg, notify) {
-  const { taskType, openerTabIndex, bgOpen, tempChat, file, audioUrls, biliTabId, prompt, videoTitle, bvid } = msg;
+  const { taskType, openerTabId, bgOpen, tempChat, file, audioUrls, biliTabId, prompt, videoTitle, bvid } = msg;
   let targetTabId = null;
 
   try {
@@ -93,7 +104,8 @@ async function handleTask(msg, notify) {
       if (tempChat) url += '?temporary-chat=true';
 
       notify('STATUS', '正在打开 ChatGPT...');
-      const tab = await chrome.tabs.create({ url, active: false, index: openerTabIndex + 1 });
+      const openerIndex = await getTabIndex(openerTabId);
+      const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1 });
       targetTabId = tab.id;
       if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
       await waitForTabLoad(targetTabId);
@@ -136,7 +148,7 @@ async function handleTask(msg, notify) {
         selfHostedToken,
         prompt,
         videoTitle,
-        openerTabIndex,
+        openerTabId,
         bgOpen,
         tempChat,
       });
@@ -155,10 +167,11 @@ async function handleTask(msg, notify) {
       }
 
       notify('STATUS', '正在打开 AI Studio...');
+      const openerIndex = await getTabIndex(openerTabId);
       const tab = await chrome.tabs.create({
         url: 'https://aistudio.google.com/prompts/new_chat',
         active: false,
-        index: openerTabIndex + 1,
+        index: openerIndex + 1,
       });
       targetTabId = tab.id;
       await waitForTabLoad(targetTabId);
@@ -184,7 +197,7 @@ async function handleTask(msg, notify) {
 }
 
 // 发送 SRT 字幕到 ChatGPT（供 bilibili content script 调用）
-async function sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabIndex, bgOpen, tempChat, prompt }) {
+async function sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat, prompt }) {
   const title = videoTitle || 'bilibili-subtitle';
   const fileName = bvid ? `${bvid}_${title}.srt` : `${title}.srt`;
 
@@ -193,7 +206,8 @@ async function sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabIndex, 
     let url = 'https://chatgpt.com/';
     if (tempChat) url += '?temporary-chat=true';
 
-    const tab = await chrome.tabs.create({ url, active: false, index: openerTabIndex + 1 });
+    const openerIndex = await getTabIndex(openerTabId);
+    const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1 });
     targetTabId = tab.id;
     if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
     await waitForTabLoad(targetTabId);
@@ -300,8 +314,8 @@ chrome.runtime.onConnect.addListener((port) => {
 // 处理来自 bilibili content script 的 SRT 结果，发送到 ChatGPT
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type !== 'SELF_HOSTED_SRT_RESULT') return false;
-  const { srtContent, videoTitle, bvid, openerTabIndex, bgOpen, tempChat, prompt } = msg;
-  sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabIndex, bgOpen, tempChat, prompt })
+  const { srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat, prompt } = msg;
+  sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat, prompt })
     .then(result => sendResponse(result))
     .catch(e => sendResponse({ ok: false, error: e.message }));
   return true; // async

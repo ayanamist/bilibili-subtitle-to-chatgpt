@@ -250,7 +250,7 @@ async function run() {
       port.postMessage({
         type: 'START_TASK',
         taskType: 'chatgpt',
-        openerTabIndex: tab.index,
+        openerTabId: tab.id,
         bgOpen: bgOpenCheckbox.checked,
         tempChat: tempChatCheckbox.checked,
         file: { name: fileName, content: srtContent },
@@ -276,7 +276,7 @@ async function run() {
       port.postMessage({
         type: 'START_TASK',
         taskType: 'selfhosted',
-        openerTabIndex: tab.index,
+        openerTabId: tab.id,
         bgOpen: bgOpenCheckbox.checked,
         tempChat: tempChatCheckbox.checked,
         audioUrls,
@@ -294,7 +294,7 @@ async function run() {
       port.postMessage({
         type: 'START_TASK',
         taskType: 'aistudio',
-        openerTabIndex: tab.index,
+        openerTabId: tab.id,
         bgOpen: bgOpenCheckbox.checked,
         tempChat: tempChatCheckbox.checked,
         audioUrls,

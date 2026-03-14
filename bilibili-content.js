@@ -92,7 +92,7 @@ function hideOverlay() {
 async function handleSelfHostedTranscribe(msg) {
   const {
     audioUrls, selfHostedUrl, selfHostedToken,
-    prompt, videoTitle, openerTabIndex, bgOpen, tempChat,
+    prompt, videoTitle, openerTabId, bgOpen, tempChat,
   } = msg;
 
   // 获取当前页面 URL 用于提取 bvid
@@ -152,7 +152,7 @@ async function handleSelfHostedTranscribe(msg) {
             srtContent,
             videoTitle,
             bvid,
-            openerTabIndex,
+            openerTabId,
             bgOpen,
             tempChat,
             prompt,
