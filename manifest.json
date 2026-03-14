@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bilibili Subtitle to AI",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "description": "提取 B 站字幕或音频并发送到AI进行总结",
   "background": {
     "service_worker": "background.js"
