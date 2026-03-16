@@ -346,6 +346,18 @@
     if (msg.type === 'CHATGPT_PREPARE_PROMPT') {
       // Reply immediately so popup can switch tab without waiting
       sendResponse({ ok: true });
+
+      // Immediately set tab title and keep reverting any changes until API rename completes
+      let titleTimer = null;
+      if (msg.videoTitle && !msg.tempChat) {
+        document.title = msg.videoTitle;
+        titleTimer = setInterval(() => {
+          if (document.title !== msg.videoTitle) {
+            document.title = msg.videoTitle;
+          }
+        }, 200);
+      }
+
       (async () => {
         const bvidPrefix = msg.bvid ? `[${msg.bvid}] ` : '';
         try {
@@ -362,21 +374,25 @@
           if (msg.videoTitle && !msg.tempChat) {
             const conversationId = await waitForConversationId();
             if (!conversationId) {
+              clearInterval(titleTimer);
               showError(`${bvidPrefix}修改会话名失败：等待对话 ID 超时`);
               return;
             }
             showStatus('正在通过 API 修改会话名...');
             try {
-                await renameConversationViaAPI(conversationId, msg.videoTitle);
-                document.title = msg.videoTitle;
+              await renameConversationViaAPI(conversationId, msg.videoTitle);
+              clearInterval(titleTimer);
+              document.title = msg.videoTitle;
             } catch (e) {
-                console.error('[ext] renameConversationViaAPI failed:', e);
-                showError(`${bvidPrefix}修改会话名失败：${e.message}`);
-                return;
+              clearInterval(titleTimer);
+              console.error('[ext] renameConversationViaAPI failed:', e);
+              showError(`${bvidPrefix}修改会话名失败：${e.message}`);
+              return;
             }
           }
           hideStatus();
         } catch (e) {
+          clearInterval(titleTimer);
           console.error('CHATGPT_PREPARE_PROMPT failed:', e);
           showError(`${bvidPrefix}错误：${e.message}`);
         }
