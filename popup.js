@@ -258,6 +258,11 @@ async function run() {
         videoTitle,
         bvid,
       });
+      // 字幕数据已完整传入 background，popup 不再需要待机
+      setStatus('字幕已移交后台处理（可关闭此窗口）');
+      isRunning = false;
+      runBtn.disabled = false;
+      handedOff = true;
     } else if (transcribeService === 'selfhosted') {
       // 无字幕 + 自建服务 → 音频转写并发送到 ChatGPT
       setStatus('正在获取音频 URL...');
