@@ -154,7 +154,7 @@ async function handleTask(msg, notify) {
       });
 
       // 通知 popup 任务已移交给 content script
-      notify('DONE', '已移交给页面处理，可关闭此窗口。');
+      notify('DONE', '已移交给页面处理。');
 
     } else if (taskType === 'aistudio') {
       notify('STATUS', '正在下载音频...');

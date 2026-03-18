@@ -1,4 +1,5 @@
 let isRunning = false;
+let canClose = false;
 let cachedVideoInfo = null;  // { bvid, aid, cid }
 let cachedHasSubtitle = null; // true/false/null (null = not checked yet)
 let transcribeService = 'aistudio'; // 'aistudio' | 'selfhosted'，从 storage 加载
@@ -81,7 +82,7 @@ function hideError() {
 }
 
 function setStatus(msg) {
-  statusText.textContent = msg;
+  statusText.textContent = msg + (canClose ? '（可关闭此窗口）' : '');
 }
 
 // Fetch video info (bvid, aid, cid) from Bilibili
@@ -188,6 +189,7 @@ async function run() {
 
   hideError();
   isRunning = true;
+  canClose = false;
   let handedOff = false;
 
   try {
@@ -227,7 +229,8 @@ async function run() {
         runBtn.disabled = false;
       }
       if (msg.type === 'DONE') {
-        setStatus(msg.text + '（可关闭此窗口）');
+        canClose = true;
+        setStatus(msg.text);
         isRunning = false;
         runBtn.disabled = false;
       }
@@ -259,7 +262,8 @@ async function run() {
         bvid,
       });
       // 字幕数据已完整传入 background，popup 不再需要待机
-      setStatus('字幕已移交后台处理（可关闭此窗口）');
+      canClose = true;
+      setStatus('字幕已移交后台处理。');
       isRunning = false;
       runBtn.disabled = false;
       handedOff = true;
