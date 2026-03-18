@@ -320,7 +320,7 @@
       if (document.visibilityState !== 'visible') return;
       document.removeEventListener('visibilitychange', onVisibilityChange);
       
-      let article = document.querySelector('#thread article.text-token-text-primary.w-full:nth-child(2)');
+      let article = document.querySelector('#thread .text-token-text-primary.w-full[data-turn=assistant]');
       if (article) {
         console.log("[ext] start scroll", article)
         article.scrollIntoView({"behavior": "instant", "block": "start"});
