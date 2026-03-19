@@ -106,12 +106,15 @@
     throw new Error('Run button not found or not enabled');
   }
 
-  // --- Enable temporary chat if needed ---
+  // --- Enable or disable temporary chat as needed ---
 
-  function enableTempChat() {
+  function setTempChat(enabled) {
     const btn = document.querySelector('button[aria-label="Temporary chat toggle"]');
     if (!btn) return;
-    if (!btn.classList.contains('ms-button-active')) {
+    const isActive = btn.classList.contains('ms-button-active');
+    if (enabled && !isActive) {
+      btn.click();
+    } else if (!enabled && isActive) {
       btn.click();
     }
   }
@@ -123,7 +126,7 @@
       throw new Error(`音频数据异常（byteLength=${audioBuffer.byteLength}），下载可能失败，已中止`);
     }
 
-    if (tempChat) enableTempChat();
+    setTempChat(!!tempChat);
 
     showStatus('正在上传音频...');
     await dropAudioFile(audioBuffer, fileName);
