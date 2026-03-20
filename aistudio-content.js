@@ -155,9 +155,14 @@
   // After clicking Run, scroll the new response turn into view the first time
   // the user switches to this tab. If the tab is already visible, do nothing.
   function scrollToResponseOnTabFocus() {
-    if (document.visibilityState === 'visible') return;
+    console.log('[ext] scrollToResponseOnTabFocus called, visibilityState=', document.visibilityState);
+    if (document.visibilityState === 'visible') {
+      console.log('[ext] tab already visible, doing nothing');
+      return;
+    }
 
     function onVisibilityChange() {
+      console.log('[ext] visibilitychange fired, visibilityState=', document.visibilityState);
       if (document.visibilityState !== 'visible') return;
       document.removeEventListener('visibilitychange', onVisibilityChange);
 
@@ -166,16 +171,41 @@
       const modelTurns = document.querySelectorAll(
         'ms-chat-turn:has(.chat-turn-container.model):not(:has(ms-thought-chunk))'
       );
+      console.log('[ext] modelTurns found:', modelTurns.length);
       const turn = modelTurns[modelTurns.length - 1];
       if (turn) {
-        turn.scrollIntoView({ behavior: 'instant', block: 'start' });
-        setTimeout(() => {
+        console.log('[ext] scrolling to turn', turn.id, turn.textContent.trim().slice(0, 80));
+        // AI Studio's ms-autoscroll-container will auto-scroll to the bottom while
+        // generation is running. Wait for it to stop scrolling, then scroll to the
+        // response turn. We detect "scroll stopped" by watching for 300ms of silence.
+        const scroller = document.querySelector('ms-autoscroll-container');
+        if (!scroller) {
+          console.log('[ext] scroller not found, scrolling immediately');
           turn.scrollIntoView({ behavior: 'instant', block: 'start' });
-        }, 200);
+          return;
+        }
+        let quietTimer = null;
+        function doScroll() {
+          console.log('[ext] scroll settled, scrolling to turn');
+          scroller.removeEventListener('scroll', onScroll);
+          turn.scrollIntoView({ behavior: 'instant', block: 'start' });
+        }
+        function onScroll() {
+          console.log('[ext] scroll event on scroller, resetting quiet timer');
+          clearTimeout(quietTimer);
+          quietTimer = setTimeout(doScroll, 300);
+        }
+        scroller.addEventListener('scroll', onScroll);
+        // Kick off immediately in case scrolling already stopped
+        quietTimer = setTimeout(doScroll, 300);
+        console.log('[ext] waiting for scroller to settle...');
+      } else {
+        console.log('[ext] no model response turn found');
       }
     }
 
     document.addEventListener('visibilitychange', onVisibilityChange);
+    console.log('[ext] visibilitychange listener registered');
   }
 
   // --- Rename the prompt title via the Edit dialog ---
