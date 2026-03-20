@@ -312,6 +312,9 @@ async function run() {
         videoTitle,
         bvid,
       });
+      // 任务已移交后台，popup 不再需要待机（后台将继续下载音频并在 AI Studio 页面处理）
+      canClose = true;
+      setStatus('正在下载音频并处理...');
     }
 
     handedOff = true;
