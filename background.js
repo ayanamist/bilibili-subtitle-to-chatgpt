@@ -185,6 +185,8 @@ async function handleTask(msg, notify) {
         prompt,
         tempChat,
         bgOpen,
+        videoTitle,
+        bvid,
       });
 
       notify('DONE', bgOpen ? '已在后台打开 AI Studio 页面。' : '已切换到 AI Studio 页面。');
