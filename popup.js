@@ -309,6 +309,8 @@ async function run() {
         audioUrls,
         biliTabId: tab.id,
         prompt: promptText,
+        videoTitle,
+        bvid,
       });
     }
 

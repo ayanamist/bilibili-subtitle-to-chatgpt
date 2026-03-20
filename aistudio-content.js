@@ -137,16 +137,16 @@
     showStatus('正在输入提示词...');
     await typePrompt(prompt);
 
-    showStatus('正在运行...');
-    await clickRunButton();
-
     if (videoTitle) {
-      showStatus('正在等待对话保存...');
-      await waitForPromptSaved();
-      await sleep(500);
+      console.log('[ext] renaming before run, videoTitle:', videoTitle, 'bvid:', bvid);
       showStatus('正在设置标题...');
       await renamePromptTitle(videoTitle, bvid);
+    } else {
+      console.log('[ext] videoTitle is empty, skipping rename');
     }
+
+    showStatus('正在运行...');
+    await clickRunButton();
 
     if (bgOpen) scrollToResponseOnTabFocus();
     hideStatus();
@@ -178,30 +178,17 @@
     document.addEventListener('visibilitychange', onVisibilityChange);
   }
 
-  // --- Wait for AI Studio to save the new prompt (URL changes from new_chat to a real ID) ---
-
-  function waitForPromptSaved(timeout = 60000) {
-    return new Promise((resolve, reject) => {
-      if (!/\/prompts\/new_chat/.test(location.pathname)) { resolve(); return; }
-      const start = Date.now();
-      const timer = setInterval(() => {
-        if (!/\/prompts\/new_chat/.test(location.pathname)) {
-          clearInterval(timer);
-          resolve();
-        } else if (Date.now() - start > timeout) {
-          clearInterval(timer);
-          reject(new Error('等待 AI Studio 保存对话超时'));
-        }
-      }, 500);
-    });
-  }
-
   // --- Rename the prompt title via the Edit dialog ---
 
   async function renamePromptTitle(title, bvid) {
+    console.log('[ext] renamePromptTitle: start, title:', title, 'bvid:', bvid);
     const editBtn = document.querySelector('button[aria-label="Edit prompt title and description"]');
-    if (!editBtn) return; // not available (e.g. already navigated away)
+    if (!editBtn) {
+      console.warn('[ext] renamePromptTitle: edit button not found');
+      return;
+    }
     editBtn.click();
+    console.log('[ext] renamePromptTitle: clicked edit button');
 
     // Wait for the dialog input to appear
     const start = Date.now();
@@ -211,12 +198,17 @@
       if (nameInput) break;
       await sleep(100);
     }
-    if (!nameInput) return;
+    if (!nameInput) {
+      console.warn('[ext] renamePromptTitle: dialog input not found after 5s');
+      return;
+    }
+    console.log('[ext] renamePromptTitle: dialog opened, current value:', nameInput.value);
 
     // Set the title using the native setter so Angular picks up the change
     const nativeInputSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
     nativeInputSetter.call(nameInput, title);
     nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    console.log('[ext] renamePromptTitle: set title to:', nameInput.value);
 
     // Fill the description with bvid for easy backtracking
     if (bvid) {
@@ -225,13 +217,21 @@
         const nativeTextareaSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
         nativeTextareaSetter.call(descInput, bvid);
         descInput.dispatchEvent(new Event('input', { bubbles: true }));
+        console.log('[ext] renamePromptTitle: set description to:', descInput.value);
+      } else {
+        console.warn('[ext] renamePromptTitle: description textarea not found');
       }
     }
 
     await sleep(100);
 
     const saveBtn = document.querySelector('button[aria-label="Save title and description"]');
-    if (saveBtn) saveBtn.click();
+    if (saveBtn) {
+      saveBtn.click();
+      console.log('[ext] renamePromptTitle: clicked save button');
+    } else {
+      console.warn('[ext] renamePromptTitle: save button not found');
+    }
   }
 
   // --- Wait for AI Studio to become interactive ---
