@@ -157,8 +157,13 @@ async function handleTask(msg, notify) {
       notify('DONE', '已移交给页面处理。');
 
     } else if (taskType === 'aistudio') {
-      notify('STATUS', '正在下载音频...');
-      _progressNotifyMap.set(biliTabId, notify);
+      const biliOverlay = (type, text) => {
+        if (type === 'STATUS') overlayMsg(biliTabId, { type: 'EXT_STATUS', text });
+        else if (type === 'ERROR') overlayMsg(biliTabId, { type: 'EXT_ERROR', text });
+        else if (type === 'DONE') overlayMsg(biliTabId, { type: 'EXT_STATUS', text });
+      };
+      biliOverlay('STATUS', '正在下载音频...');
+      _progressNotifyMap.set(biliTabId, biliOverlay);
       let audioData;
       try {
         audioData = await downloadAudio(biliTabId, audioUrls);
@@ -166,7 +171,7 @@ async function handleTask(msg, notify) {
         _progressNotifyMap.delete(biliTabId);
       }
 
-      notify('STATUS', '正在打开 AI Studio...');
+      biliOverlay('STATUS', '正在打开 AI Studio...');
       const openerIndex = await getTabIndex(openerTabId);
       const tab = await chrome.tabs.create({
         url: 'https://aistudio.google.com/prompts/new_chat',
@@ -178,7 +183,7 @@ async function handleTask(msg, notify) {
       if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
 
       // Content script is injected at document_start and handles DOM readiness internally.
-      notify('STATUS', '正在发送音频到 AI Studio...');
+      biliOverlay('STATUS', '正在发送音频到 AI Studio...');
       await chrome.tabs.sendMessage(targetTabId, {
         type: 'AISTUDIO_UPLOAD_AND_RUN',
         audioData,
@@ -189,10 +194,15 @@ async function handleTask(msg, notify) {
         bvid,
       });
 
-      notify('DONE', bgOpen ? '已在后台打开 AI Studio 页面。' : '已切换到 AI Studio 页面。');
+      const doneMsg = bgOpen ? '已在后台打开 AI Studio 页面。' : '已切换到 AI Studio 页面。';
+      notify('DONE', doneMsg); // 通知 popup 重新启用按钮
+      biliOverlay('DONE', doneMsg);
     }
   } catch (e) {
-    notify('ERROR', `错误：${e.message}`);
+    notify('ERROR', `错误：${e.message}`); // 通知 popup 重新启用按钮并展示错误
+    if (biliTabId) {
+      overlayMsg(biliTabId, { type: 'EXT_ERROR', text: `错误：${e.message}` });
+    }
     if (targetTabId) {
       overlayMsg(targetTabId, { type: 'EXT_ERROR', text: `错误：${e.message}` });
     }

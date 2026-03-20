@@ -222,7 +222,7 @@ async function run() {
     const port = chrome.runtime.connect({ name: 'bilibili-subtitle' });
 
     port.onMessage.addListener((msg) => {
-      if (msg.type === 'STATUS') setStatus(msg.text);
+      if (msg.type === 'STATUS') { if (!canClose) setStatus(msg.text); return; }
       if (msg.type === 'ERROR') {
         showError(msg.text);
         isRunning = false;
@@ -295,6 +295,8 @@ async function run() {
         selfHostedUrl,
         selfHostedToken,
       });
+      canClose = true;
+      setStatus('进度将在B站页面显示，可关闭此窗口。');
     } else {
       // 无字幕 + AI Studio → 发送音频到 AI Studio
       setStatus('正在获取音频 URL...');
@@ -314,7 +316,7 @@ async function run() {
       });
       // 任务已移交后台，popup 不再需要待机（后台将继续下载音频并在 AI Studio 页面处理）
       canClose = true;
-      setStatus('正在下载音频并处理...');
+      setStatus('进度将在B站页面显示，可关闭此窗口。');
     }
 
     handedOff = true;

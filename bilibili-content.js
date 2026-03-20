@@ -40,6 +40,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ ok: true });
     return false;
   }
+
+  if (msg.type === 'EXT_STATUS') {
+    showOverlay(msg.text);
+    if (_overlayText) _overlayText.style.color = '';
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (msg.type === 'EXT_ERROR') {
+    showOverlay(msg.text);
+    _overlayText.style.color = '#ff6b6b';
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (msg.type === 'EXT_HIDE_STATUS') {
+    hideOverlay();
+    sendResponse({ ok: true });
+    return false;
+  }
 });
 
 // ---- 状态浮层 ----
