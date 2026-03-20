@@ -121,7 +121,7 @@
 
   // --- Main handler ---
 
-  async function handleUploadAndRun(audioBuffer, fileName, prompt, tempChat) {
+  async function handleUploadAndRun(audioBuffer, fileName, prompt, tempChat, bgOpen) {
     if (!(audioBuffer.byteLength >= 1024)) {
       throw new Error(`音频数据异常（byteLength=${audioBuffer.byteLength}），下载可能失败，已中止`);
     }
@@ -140,7 +140,34 @@
     showStatus('正在运行...');
     await clickRunButton();
 
+    if (bgOpen) scrollToResponseOnTabFocus();
     hideStatus();
+  }
+
+  // After clicking Run, scroll the new response turn into view the first time
+  // the user switches to this tab. If the tab is already visible, do nothing.
+  function scrollToResponseOnTabFocus() {
+    if (document.visibilityState === 'visible') return;
+
+    function onVisibilityChange() {
+      if (document.visibilityState !== 'visible') return;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+
+      // Find model response turns that are NOT the thoughts/thinking section.
+      // Thought turns contain ms-thought-chunk; the actual response turn does not.
+      const modelTurns = document.querySelectorAll(
+        'ms-chat-turn:has(.chat-turn-container.model):not(:has(ms-thought-chunk))'
+      );
+      const turn = modelTurns[modelTurns.length - 1];
+      if (turn) {
+        turn.scrollIntoView({ behavior: 'instant', block: 'start' });
+        setTimeout(() => {
+          turn.scrollIntoView({ behavior: 'instant', block: 'start' });
+        }, 200);
+      }
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
   }
 
   // --- Wait for AI Studio to become interactive ---
@@ -175,7 +202,7 @@
           const u8 = new Uint8Array(binary.length);
           for (let i = 0; i < binary.length; i++) u8[i] = binary.charCodeAt(i);
           const audioBuffer = u8.buffer;
-          await handleUploadAndRun(audioBuffer, fileName, msg.prompt, msg.tempChat);
+          await handleUploadAndRun(audioBuffer, fileName, msg.prompt, msg.tempChat, msg.bgOpen);
         } catch (e) {
           console.error('AISTUDIO_UPLOAD_AND_RUN failed:', e);
           showError(`错误：${e.message}`);
