@@ -61,15 +61,7 @@ bgOpenCheckbox.addEventListener('change', () => {
 // Set initial UI based on restored checkbox state
 updateUI();
 
-// Load prompt: use custom prompt from storage, fallback to built-in prompt.txt
-async function loadPrompt() {
-  const result = await chrome.storage.local.get('customPrompt');
-  if (result.customPrompt != null) {
-    return result.customPrompt;
-  }
-  const res = await fetch(chrome.runtime.getURL('prompt.txt'));
-  return res.text();
-}
+
 
 // Show/hide error
 function showError(msg) {
@@ -215,7 +207,6 @@ async function run() {
     }
 
     const noSubtitle = !subtitle;
-    const promptText = await loadPrompt();
 
     // Connect to background service worker
     setStatus('正在移交任务，请勿关闭此窗口...');
@@ -257,7 +248,6 @@ async function run() {
         bgOpen: bgOpenCheckbox.checked,
         tempChat: tempChatCheckbox.checked,
         file: { name: fileName, content: srtContent },
-        prompt: promptText,
         videoTitle,
         bvid,
       });
@@ -290,7 +280,6 @@ async function run() {
         tempChat: tempChatCheckbox.checked,
         audioUrls,
         biliTabId: tab.id,
-        prompt: promptText,
         videoTitle,
         selfHostedUrl,
         selfHostedToken,
@@ -310,7 +299,6 @@ async function run() {
         tempChat: tempChatCheckbox.checked,
         audioUrls,
         biliTabId: tab.id,
-        prompt: promptText,
         videoTitle,
         bvid,
       });

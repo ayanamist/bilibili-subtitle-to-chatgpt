@@ -46,7 +46,8 @@ bilibili-subtitle-to-ai/
 ├── aistudio-content.js     # 内容脚本：在 AI Studio 页面注入音频文件并发送
 ├── options.html            # 设置页面：自定义提示词、自建服务配置
 ├── options.js              # 设置页面逻辑
-├── prompt.txt              # 默认提示词（结构化总结指令）
+├── prompt_chatgpt.txt      # ChatGPT使用的默认提示词（结构化总结指令）
+├── prompt_aistudio.txt     # AI Studio使用的默认提示词（结构化总结指令）
 ├── server/                 # 自建音频转字幕 Go 服务
 │   ├── main.go             # 服务主程序
 │   ├── go.mod

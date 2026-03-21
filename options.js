@@ -4,16 +4,32 @@ const saveBtn = document.getElementById('saveBtn');
 const resetBtn = document.getElementById('resetBtn');
 const saveStatus = document.getElementById('saveStatus');
 
+const aiStudioPromptTextarea = document.getElementById('aiStudioPromptTextarea');
+const saveAIStudioBtn = document.getElementById('saveAIStudioBtn');
+const resetAIStudioBtn = document.getElementById('resetAIStudioBtn');
+const aiStudioSaveStatus = document.getElementById('aiStudioSaveStatus');
+
 let defaultPrompt = '';
+let defaultAIStudioPrompt = '';
 
 async function loadDefaultPrompt() {
-  const res = await fetch(chrome.runtime.getURL('prompt.txt'));
+  const res = await fetch(chrome.runtime.getURL('prompt_chatgpt.txt'));
   defaultPrompt = await res.text();
+}
+
+async function loadDefaultAIStudioPrompt() {
+  const res = await fetch(chrome.runtime.getURL('prompt_aistudio.txt'));
+  defaultAIStudioPrompt = await res.text();
 }
 
 async function loadSavedPrompt() {
   const result = await chrome.storage.local.get('customPrompt');
   return result.customPrompt;
+}
+
+async function loadSavedAIStudioPrompt() {
+  const result = await chrome.storage.local.get('customAIStudioPrompt');
+  return result.customAIStudioPrompt;
 }
 
 function flashStatus(el, msg, isError = false) {
@@ -37,6 +53,22 @@ resetBtn.addEventListener('click', async () => {
   promptTextarea.value = defaultPrompt;
   await chrome.storage.local.remove('customPrompt');
   flashStatus(saveStatus, '已恢复默认');
+});
+
+saveAIStudioBtn.addEventListener('click', async () => {
+  const value = aiStudioPromptTextarea.value;
+  if (value === defaultAIStudioPrompt) {
+    await chrome.storage.local.remove('customAIStudioPrompt');
+  } else {
+    await chrome.storage.local.set({ customAIStudioPrompt: value });
+  }
+  flashStatus(aiStudioSaveStatus, '已保存');
+});
+
+resetAIStudioBtn.addEventListener('click', async () => {
+  aiStudioPromptTextarea.value = defaultAIStudioPrompt;
+  await chrome.storage.local.remove('customAIStudioPrompt');
+  flashStatus(aiStudioSaveStatus, '已恢复默认');
 });
 
 // ---- 自建服务配置部分 ----
@@ -199,15 +231,26 @@ async function init() {
   promptTextarea.placeholder = '正在加载...';
   saveBtn.disabled = true;
   resetBtn.disabled = true;
+  aiStudioPromptTextarea.disabled = true;
+  aiStudioPromptTextarea.placeholder = '正在加载...';
+  saveAIStudioBtn.disabled = true;
+  resetAIStudioBtn.disabled = true;
 
   await loadDefaultPrompt();
   const saved = await loadSavedPrompt();
   promptTextarea.value = saved != null ? saved : defaultPrompt;
-
   promptTextarea.placeholder = '';
   promptTextarea.disabled = false;
   saveBtn.disabled = false;
   resetBtn.disabled = false;
+
+  await loadDefaultAIStudioPrompt();
+  const savedAIStudio = await loadSavedAIStudioPrompt();
+  aiStudioPromptTextarea.value = savedAIStudio != null ? savedAIStudio : defaultAIStudioPrompt;
+  aiStudioPromptTextarea.placeholder = '';
+  aiStudioPromptTextarea.disabled = false;
+  saveAIStudioBtn.disabled = false;
+  resetAIStudioBtn.disabled = false;
 
   // 加载自建服务配置
   const result = await chrome.storage.local.get([

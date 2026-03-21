@@ -95,7 +95,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // Main task handler — runs in the service worker, independent of popup lifecycle
 async function handleTask(msg, notify) {
-  const { taskType, openerTabId, bgOpen, tempChat, file, audioUrls, biliTabId, prompt, videoTitle, bvid } = msg;
+  const { taskType, openerTabId, bgOpen, tempChat, file, audioUrls, biliTabId, videoTitle, bvid } = msg;
   let targetTabId = null;
 
   try {
@@ -126,7 +126,6 @@ async function handleTask(msg, notify) {
       await chrome.tabs.sendMessage(targetTabId, {
         type: 'CHATGPT_PREPARE_PROMPT',
         file,
-        prompt,
         bgOpen,
         tempChat,
         videoTitle,
@@ -146,7 +145,6 @@ async function handleTask(msg, notify) {
         audioUrls,
         selfHostedUrl,
         selfHostedToken,
-        prompt,
         videoTitle,
         openerTabId,
         bgOpen,
@@ -187,7 +185,6 @@ async function handleTask(msg, notify) {
       await chrome.tabs.sendMessage(targetTabId, {
         type: 'AISTUDIO_UPLOAD_AND_RUN',
         audioData,
-        prompt,
         tempChat,
         bgOpen,
         videoTitle,
@@ -210,7 +207,7 @@ async function handleTask(msg, notify) {
 }
 
 // 发送 SRT 字幕到 ChatGPT（供 bilibili content script 调用）
-async function sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat, prompt }) {
+async function sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat }) {
   const title = videoTitle || 'bilibili-subtitle';
   const fileName = bvid ? `${bvid}_${title}.srt` : `${title}.srt`;
 
@@ -238,7 +235,6 @@ async function sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgO
     await chrome.tabs.sendMessage(targetTabId, {
       type: 'CHATGPT_PREPARE_PROMPT',
       file: { name: fileName, content: srtContent },
-      prompt,
       bgOpen,
       tempChat,
       videoTitle,
@@ -327,8 +323,8 @@ chrome.runtime.onConnect.addListener((port) => {
 // 处理来自 bilibili content script 的 SRT 结果，发送到 ChatGPT
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type !== 'SELF_HOSTED_SRT_RESULT') return false;
-  const { srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat, prompt } = msg;
-  sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat, prompt })
+  const { srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat } = msg;
+  sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat })
     .then(result => sendResponse(result))
     .catch(e => sendResponse({ ok: false, error: e.message }));
   return true; // async

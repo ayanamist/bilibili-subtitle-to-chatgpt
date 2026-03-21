@@ -337,6 +337,13 @@
     console.log('[ext] visibilitychange listener registered');
   }
 
+  async function loadPrompt() {
+    const result = await chrome.storage.local.get('customPrompt');
+    if (result.customPrompt != null) return result.customPrompt;
+    const res = await fetch(chrome.runtime.getURL('prompt_chatgpt.txt'));
+    return res.text();
+  }
+
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'CHATGPT_CHECK_READY') {
       sendResponse(checkReady());
@@ -363,10 +370,8 @@
         try {
           showStatus('正在添加字幕文件...');
           await attachFile(msg.file.name, msg.file.content);
-          if (msg.prompt) {
-            showStatus('正在输入提示词...');
-            inputPrompt(msg.prompt);
-          }
+          showStatus('正在输入提示词...');
+          inputPrompt(await loadPrompt());
           showStatus('正在发送...');
           await clickSend();
           if (msg.bgOpen) scrollToResponseOnTabFocus();

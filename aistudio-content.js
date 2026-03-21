@@ -282,6 +282,15 @@
     });
   }
 
+  // --- Load prompt from storage, fallback to built-in file ---
+
+  async function loadAIStudioPrompt() {
+    const result = await chrome.storage.local.get('customAIStudioPrompt');
+    if (result.customAIStudioPrompt != null) return result.customAIStudioPrompt;
+    const res = await fetch(chrome.runtime.getURL('prompt_aistudio.txt'));
+    return res.text();
+  }
+
   // --- Message listener ---
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -296,7 +305,8 @@
           const u8 = new Uint8Array(binary.length);
           for (let i = 0; i < binary.length; i++) u8[i] = binary.charCodeAt(i);
           const audioBuffer = u8.buffer;
-          await handleUploadAndRun(audioBuffer, fileName, msg.prompt, msg.tempChat, msg.bgOpen, msg.videoTitle, msg.bvid);
+          const prompt = await loadAIStudioPrompt();
+          await handleUploadAndRun(audioBuffer, fileName, prompt, msg.tempChat, msg.bgOpen, msg.videoTitle, msg.bvid);
         } catch (e) {
           console.error('AISTUDIO_UPLOAD_AND_RUN failed:', e);
           showError(`错误：${e.message}`);
