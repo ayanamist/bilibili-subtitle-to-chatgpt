@@ -98,16 +98,22 @@ radioAIStudio.addEventListener('change', async () => {
 
 radioSelfHosted.addEventListener('change', async () => {
   if (radioSelfHosted.checked) {
-    // 检查是否已配置自建服务
+    // 从 storage 重新加载自建服务配置，避免切换时输入框内容丢失
+    const result = await chrome.storage.local.get(['selfHostedApiUrl', 'selfHostedApiToken']);
+    selfHostedApiUrlInput.value = result.selfHostedApiUrl || '';
+    selfHostedApiTokenInput.value = result.selfHostedApiToken || '';
+
     const url = selfHostedApiUrlInput.value.trim();
     if (!url) {
       // 先切换显示，提示用户填写
       updateSelfHostedSectionVisibility();
       selfHostedApiUrlInput.focus();
+      updateTestBtnState();
       return;
     }
     await chrome.storage.local.set({ transcribeService: 'selfhosted' });
     updateSelfHostedSectionVisibility();
+    updateTestBtnState();
   }
 });
 
