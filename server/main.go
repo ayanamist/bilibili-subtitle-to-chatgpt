@@ -230,7 +230,7 @@ func authMiddleware(token string, next http.HandlerFunc) http.HandlerFunc {
 
 // ---- /version 接口 ----
 
-const serviceVersion = "1.0.0"
+const serviceVersion = "2.0.0"
 
 func versionHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -251,31 +251,73 @@ func makeTranscribeHandler(cfg *Config) http.HandlerFunc {
 			return
 		}
 
-		// 解析请求体
-		var req transcribeRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "请求体解析失败: "+err.Error(), http.StatusBadRequest)
-			return
-		}
+		// 判断请求模式：文件上传 或 URL 下载
+		contentType := r.Header.Get("Content-Type")
+		isUpload := strings.Contains(contentType, "multipart/form-data")
 
-		// 校验 URL 后缀
-		urlPath := strings.Split(req.URL, "?")[0]
-		urlPathLower := strings.ToLower(urlPath)
+		var audioURL string
+		var audioReqHeaders map[string]string
+		var uploadFile io.ReadCloser
 		var matchedExt string
-		for _, ext := range cfg.AllowExtensions {
-			dotExt := "." + strings.ToLower(strings.TrimPrefix(ext, "."))
-			if strings.HasSuffix(urlPathLower, dotExt) {
-				matchedExt = dotExt
-				break
+
+		if isUpload {
+			// 文件上传模式：audio 字段携带音频文件
+			if err := r.ParseMultipartForm(100 << 20); err != nil {
+				http.Error(w, "表单解析失败: "+err.Error(), http.StatusBadRequest)
+				return
 			}
-		}
-		if matchedExt == "" {
-			actualExt := strings.TrimPrefix(filepath.Ext(urlPath), ".")
-			if actualExt == "" {
-				actualExt = "(无扩展名)"
+			f, fh, err := r.FormFile("audio")
+			if err != nil {
+				http.Error(w, "获取上传文件失败: "+err.Error(), http.StatusBadRequest)
+				return
 			}
-			http.Error(w, "收到的扩展名 "+actualExt+" 不在允许列表中，仅支持: "+strings.Join(cfg.AllowExtensions, ", "), http.StatusBadRequest)
-			return
+			uploadFile = f
+			defer uploadFile.Close()
+
+			fname := strings.ToLower(fh.Filename)
+			for _, ext := range cfg.AllowExtensions {
+				dotExt := "." + strings.ToLower(strings.TrimPrefix(ext, "."))
+				if strings.HasSuffix(fname, dotExt) {
+					matchedExt = dotExt
+					break
+				}
+			}
+			if matchedExt == "" {
+				actualExt := strings.TrimPrefix(filepath.Ext(fname), ".")
+				if actualExt == "" {
+					actualExt = "(无扩展名)"
+				}
+				http.Error(w, "收到的扩展名 "+actualExt+" 不在允许列表中，仅支持: "+strings.Join(cfg.AllowExtensions, ", "), http.StatusBadRequest)
+				return
+			}
+		} else {
+			// URL 下载模式：解析 JSON 请求体
+			var req transcribeRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "请求体解析失败: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			audioURL = req.URL
+			audioReqHeaders = req.Headers
+
+			// 校验 URL 后缀
+			urlPath := strings.Split(audioURL, "?")[0]
+			urlPathLower := strings.ToLower(urlPath)
+			for _, ext := range cfg.AllowExtensions {
+				dotExt := "." + strings.ToLower(strings.TrimPrefix(ext, "."))
+				if strings.HasSuffix(urlPathLower, dotExt) {
+					matchedExt = dotExt
+					break
+				}
+			}
+			if matchedExt == "" {
+				actualExt := strings.TrimPrefix(filepath.Ext(urlPath), ".")
+				if actualExt == "" {
+					actualExt = "(无扩展名)"
+				}
+				http.Error(w, "收到的扩展名 "+actualExt+" 不在允许列表中，仅支持: "+strings.Join(cfg.AllowExtensions, ", "), http.StatusBadRequest)
+				return
+			}
 		}
 
 		// 建立 SSE 连接
@@ -356,10 +398,26 @@ func makeTranscribeHandler(cfg *Config) http.HandlerFunc {
 			os.Remove(logPath)
 		}()
 
-		// 下载音频
-		if err := downloadFile(ctx, req.URL, req.Headers, audioPath); err != nil {
-			sse.writeError("音频下载失败: " + err.Error())
-			return
+		// 获取音频内容
+		if isUpload {
+			// 将上传的文件写入临时文件
+			f, err := os.OpenFile(audioPath, os.O_WRONLY, 0600)
+			if err != nil {
+				sse.writeError("打开临时文件失败: " + err.Error())
+				return
+			}
+			_, copyErr := io.Copy(f, uploadFile)
+			f.Close()
+			if copyErr != nil {
+				sse.writeError("写入上传文件失败: " + copyErr.Error())
+				return
+			}
+		} else {
+			// 下载音频
+			if err := downloadFile(ctx, audioURL, audioReqHeaders, audioPath); err != nil {
+				sse.writeError("音频下载失败: " + err.Error())
+				return
+			}
 		}
 
 		// 调用转写程序

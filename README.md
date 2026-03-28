@@ -107,13 +107,30 @@ exec = ["whisper", "--model", "large", "--output_format", "srt"]
 
 服务启动后会输出监听地址，例如：`服务启动，监听地址: :8080`
 
+### HTTP 接口说明
+
+所有接口均需携带 `Authorization: Bearer <token>` 请求头。
+
+**`GET /version`** — 返回服务版本号：
+
+```json
+{"version": "2.0.0"}
+```
+
+**`POST /transcribe`** — 音频转写，返回 SSE 流，支持两种请求方式：
+
+- **文件上传**（`multipart/form-data`）：以 `audio` 字段上传音频文件，文件名须包含允许的扩展名（默认 `m4a`、`m4s`）
+- **URL 下载**（`application/json`）：传入 `{"url": "...", "headers": {...}}`，服务端从 URL 下载音频
+
+两种方式的响应格式相同，均为 SSE 事件流，最终通过 `result` 事件返回 `{"srt": "..."}` 格式的 SRT 字幕内容。
+
 ### 在扩展中配置
 
 1. 打开扩展设置页（点击扩展图标旁的「⋯」→「选项」）
 2. 在「自建字幕服务」区域填写：
    - **API 地址**：如 `http://localhost:8080`
    - **Token**：与配置文件中 `token` 一致
-3. 点击「测试服务」验证连接是否正常
+3. 点击「测试服务」验证连接，扩展会自动上传 `test/sample.m4a` 至 `/transcribe` 接口进行完整转写测试
 4. 在「音频转写服务」区域选择「自建服务」
 5. 保存设置
 
@@ -125,6 +142,18 @@ exec = ["whisper", "--model", "large", "--output_format", "srt"]
 - 原生 JavaScript，无需构建工具
 - Bilibili Web API（字幕获取、音频流获取）
 - DataTransfer API（模拟文件拖放上传）
+- [transformers.js](https://github.com/huggingface/transformers.js) — 本地 Whisper 推理（WebGPU / WASM）
+
+## lib/ 目录下的第三方文件
+
+`lib/` 目录不含于版本库，需手动下载。所有文件均来自 npm 包 `@huggingface/transformers@3.8.1`，版本号已嵌入文件名，升级时替换对应版本文件并同步修改 `offscreen.js` 和 `manifest.json` 中的引用即可。
+
+| 文件 | 来源 CDN URL | 说明 |
+|------|-------------|------|
+| `lib/transformers-3.8.1.min.js` | `https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js` | transformers.js 主库（ESM） |
+| `lib/ort-wasm-simd-threaded-3.8.1.jsep.mjs` | `https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/ort-wasm-simd-threaded.jsep.mjs` | ONNX Runtime WebGPU/WASM 入口（JS 模块，必须本地，受 CSP 限制） |
+
+`ort-wasm-simd-threaded.jsep.wasm`（20.6 MB）无需下载，运行时直接从 jsDelivr CDN 加载。
 
 ## License
 

@@ -2,7 +2,9 @@ let isRunning = false;
 let canClose = false;
 let cachedVideoInfo = null;  // { bvid, aid, cid }
 let cachedHasSubtitle = null; // true/false/null (null = not checked yet)
-let transcribeService = 'aistudio'; // 'aistudio' | 'selfhosted'，从 storage 加载
+let transcribeService = 'aistudio'; // 'aistudio' | 'selfhosted' | 'local'
+let localModel = null;
+let localDevice = null;
 
 // DOM
 const runBtn = document.getElementById('runBtn');
@@ -35,6 +37,14 @@ function updateUI() {
     forceAIStudioLabelText.textContent = '始终音频转写';
     if (noSubtitle || forceChecked) {
       runBtn.textContent = '音频转写并发送到ChatGPT';
+    } else {
+      runBtn.textContent = '发送字幕到 ChatGPT';
+    }
+  } else if (transcribeService === 'local') {
+    // 本地推理场景
+    forceAIStudioLabelText.textContent = '始终本地推理';
+    if (noSubtitle || forceChecked) {
+      runBtn.textContent = '本地推理并发送到 ChatGPT';
     } else {
       runBtn.textContent = '发送字幕到 ChatGPT';
     }
@@ -286,6 +296,34 @@ async function run() {
       });
       canClose = true;
       setStatus('进度将在B站页面显示，可关闭此窗口。');
+    } else if (transcribeService === 'local') {
+      // 无字幕 + 本地推理 → 本地转写并发送到 ChatGPT
+      if (!localModel || !localDevice) throw new Error('本地推理配置缺失，请在设置页重新选择模型和设备。');
+      // 确保权限仍然有效（开发模式重新加载扩展后可选权限会重置）
+      const ALL_LOCAL_ORIGINS = [
+        'https://*.huggingface.co/*',
+        'https://cdn.jsdelivr.net/*',
+      ];
+      const permGranted = await chrome.permissions.request({ origins: ALL_LOCAL_ORIGINS }).catch(() => false);
+      if (!permGranted) throw new Error('权限未授予，请在设置页重新选择「本地推理」以授权。');
+      setStatus('正在获取音频 URL...');
+      const audioUrls = await fetchSmallestAudioUrl(aid, cid);
+
+      port.postMessage({
+        type: 'START_TASK',
+        taskType: 'local',
+        openerTabId: tab.id,
+        bgOpen: bgOpenCheckbox.checked,
+        tempChat: tempChatCheckbox.checked,
+        audioUrls,
+        biliTabId: tab.id,
+        videoTitle,
+        bvid,
+        model: localModel,
+        device: localDevice,
+      });
+      canClose = true;
+      setStatus('进度将在B站页面显示，可关闭此窗口。');
     } else {
       // 无字幕 + AI Studio → 发送音频到 AI Studio
       setStatus('正在获取音频 URL...');
@@ -325,8 +363,10 @@ runBtn.addEventListener('click', run);
 (async () => {
   try {
     // 先加载服务来源配置
-    const storageResult = await chrome.storage.local.get('transcribeService');
+    const storageResult = await chrome.storage.local.get(['transcribeService', 'localModel', 'localDevice']);
     transcribeService = storageResult.transcribeService || 'aistudio';
+    localModel = storageResult.localModel || null;
+    localDevice = storageResult.localDevice || null;
     updateUI();
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

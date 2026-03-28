@@ -9,8 +9,12 @@
   "permissions": [
     "activeTab",
     "tabs",
-    "storage"
+    "storage",
+    "offscreen"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
@@ -83,6 +87,10 @@
         "https://chat.openai.com/*",
         "https://aistudio.google.com/*"
       ]
+    },
+    {
+      "resources": ["lib/transformers-3.8.1.min.js", "lib/ort-wasm-simd-threaded-3.8.1.jsep.mjs"],
+      "matches": ["<all_urls>"]
     }
   ],
   "icons": {

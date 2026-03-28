@@ -98,6 +98,7 @@ function ensureOverlay() {
 function showOverlay(text) {
   ensureOverlay();
   _overlayText.textContent = text;
+  _overlayText.style.color = ''; // 重置颜色，防止上次错误的红色残留
   _overlay.style.display = 'flex';
 }
 

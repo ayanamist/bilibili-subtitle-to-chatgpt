@@ -160,13 +160,102 @@ html, body {
 .radio-label input[type="radio"] {
   cursor: pointer;
 }
+.radio-desc {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 22px;
+  margin-top: 2px;
+  line-height: 1.5;
+}
+.webgpu-status {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  margin-left: 8px;
+}
+.webgpu-status.supported { color: #276749; }
+.webgpu-status.unsupported { color: #c53030; }
+.local-subsection {
+  margin-top: 10px;
+  margin-left: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.local-subsection-title {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.model-radio-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.model-radio-label:has(input:checked) {
+  border-color: var(--accent);
+  background: rgba(0,0,0,0.02);
+}
+.model-radio-label .radio-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.model-radio-label .model-name {
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.model-radio-label .model-meta {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 22px;
+}
+.model-cache-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  margin-left: 8px;
+  border: 1px solid transparent;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.model-cache-badge.cached     { background:#f0fff4; border-color:#9ae6b4; color:#276749; }
+.model-cache-badge.checking   { color: var(--text-muted); }
+.model-cache-badge.not-cached { background: var(--surface); border-color: var(--border); color: var(--text-muted); }
+.model-cache-badge.downloading { background:#ebf8ff; border-color:#90cdf4; color:#2b6cb0; }
+.model-cache-badge.error      { background:#fff5f5; border-color:#feb2b2; color:#c53030; }
+.hf-permission-note {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 6px 10px;
+  background: #fffbeb;
+  border: 1px solid #f6e05e;
+  border-radius: var(--radius);
+}
+
+
 .test-result {
   font-family: 'DM Mono', monospace;
   font-size: 12px;
   padding: 6px 10px;
   border-radius: var(--radius);
+  margin-top: 6px;
   display: none;
-  margin-top: 4px;
 }
 .test-result.success {
   display: block;
@@ -197,6 +286,86 @@ html, body {
       <span>自建服务</span>
       <a href="https://github.com/ayanamist/bilibili-subtitle-to-chatgpt#readme" target="_blank" style="font-size:12px;color:var(--accent);text-decoration:none;margin-left:4px;">使用说明</a>
     </label>
+    <label class="radio-label">
+      <input type="radio" name="transcribeService" value="local" id="radioLocal">
+      <span>本地推理 (通过 transformers.js)</span>
+    </label>
+  </div>
+
+  <!-- 本地推理配置 -->
+  <div id="localSection" style="display:none">
+
+    <!-- 设备选择 -->
+    <div class="local-subsection">
+      <div class="local-subsection-title">推理设备</div>
+      <label class="radio-label">
+        <input type="radio" name="localDevice" value="webgpu" id="radioDeviceWebGPU">
+        <span>WebGPU（GPU 加速，推荐，约 faster-whisper 的 27% 性能）</span>
+        <span class="webgpu-status" id="webgpuStatus"></span>
+      </label>
+      <label class="radio-label">
+        <input type="radio" name="localDevice" value="wasm" id="radioDeviceWasm">
+        <span>WASM / CPU（兼容性更好，速度较慢，约 faster-whisper 的 6.5% 性能）</span>
+      </label>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
+        <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-muted)">最大并发推理数</span>
+        <input type="number" id="localConcurrencyInput" min="1" max="8" value="1"
+          style="width:56px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--radius);font-family:'DM Mono',monospace;font-size:13px;color:var(--text);background:var(--surface);">
+        <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-muted)">（默认1，设备显存不足时请保持默认）</span>
+      </div>
+    </div>
+
+    <!-- 模型选择 -->
+    <div class="local-subsection">
+      <div class="local-subsection-title">Whisper 模型</div>
+
+      <label class="model-radio-label">
+        <div class="radio-top">
+          <input type="radio" name="localModel" value="onnx-community/whisper-tiny" id="modelTiny">
+          <span class="model-name">whisper-tiny</span>
+          <span class="model-cache-badge checking" id="modelCacheTiny">检测中…</span>
+        </div>
+        <span class="model-meta">约 150MB (WebGPU fp32) / 75MB (WASM q8) &nbsp;|&nbsp; 最快，多语言，中文精度较低</span>
+      </label>
+
+      <label class="model-radio-label">
+        <div class="radio-top">
+          <input type="radio" name="localModel" value="onnx-community/whisper-base" id="modelBase">
+          <span class="model-name">whisper-base</span>
+          <span class="model-cache-badge checking" id="modelCacheBase">检测中…</span>
+        </div>
+        <span class="model-meta">约 290MB (WebGPU fp32) / 145MB (WASM q8) &nbsp;|&nbsp; 较快，精度一般</span>
+      </label>
+
+      <label class="model-radio-label">
+        <div class="radio-top">
+          <input type="radio" name="localModel" value="onnx-community/whisper-small" id="modelSmall" checked>
+          <span class="model-name">whisper-small ★ 推荐</span>
+          <span class="model-cache-badge checking" id="modelCacheSmall">检测中…</span>
+        </div>
+        <span class="model-meta">约 970MB (WebGPU fp32) / 490MB (WASM q8) &nbsp;|&nbsp; 速度与精度均衡，中文效果良好</span>
+      </label>
+
+      <label class="model-radio-label">
+        <div class="radio-top">
+          <input type="radio" name="localModel" value="onnx-community/whisper-large-v3-turbo" id="modelLarge">
+          <span class="model-name">whisper-large-v3-turbo</span>
+          <span class="model-cache-badge checking" id="modelCacheLarge">检测中…</span>
+        </div>
+        <span class="model-meta">约 820MB (WebGPU/WASM q4) &nbsp;|&nbsp; 最高精度，多语言，速度最慢</span>
+      </label>
+    </div>
+
+    <!-- 推理运行时 -->
+    <div class="local-subsection">
+      <div class="local-subsection-title">推理运行时</div>
+      <div class="radio-top" style="padding:2px 0">
+        <span class="model-name" style="font-size:12px">ort-wasm-simd-threaded.jsep.wasm</span>
+        <span class="model-cache-badge checking" id="wasmCacheBadge">检测中…</span>
+      </div>
+      <span class="model-meta" style="display:block;margin-top:2px">约 20.6 MB，首次使用时自动下载并缓存</span>
+    </div>
+
   </div>
 
   <!-- 自建字幕服务配置 -->
@@ -212,10 +381,34 @@ html, body {
     </div>
     <div class="btn-row">
       <button class="save-btn" id="saveSelfHostedBtn">保存</button>
-      <button class="test-btn" id="testServiceBtn" disabled>测试服务</button>
       <span class="save-status" id="selfHostedSaveStatus">已保存</span>
     </div>
-    <div class="test-result" id="testResult"></div>
+  </div>
+
+  <!-- 推理测试 / 测试服务（本地推理与自建服务共用） -->
+  <div class="local-subsection" id="testSection" style="display:none;margin-top:10px">
+    <div class="local-subsection-title" id="testSectionTitle"></div>
+
+    <div id="localTestDesc">
+      <p class="radio-desc" style="margin:0 0 4px">使用内置的短音频片段验证当前设置能否正常转写。</p>
+      <p class="radio-desc" style="margin:0 0 6px">
+        测试音频内容为：<code style="font-family:'DM Mono',monospace;font-size:11px;background:var(--surface);padding:1px 5px;border-radius:3px;border:1px solid var(--border)">你好，这是一个本地推理测试，如果你看到这段文字，说明它工作得很好</code><br>
+        <span style="color:var(--text-muted);font-size:11px">Whisper 属于生成式模型，同一段音频每次转写结果可能存在细微差异（大小写、标点、断句等），属正常现象，无需精确匹配即可认为正常。</span>
+      </p>
+    </div>
+
+    <div id="selfHostedTestDesc">
+      <p class="radio-desc" style="margin:0 0 6px">上传内置测试音频（test/sample.m4a）至 /transcribe 接口，验证转写功能是否正常。</p>
+    </div>
+
+    <div class="hf-permission-note" id="hfPermissionNote" style="display:none;margin-bottom:6px">
+      ⚠ 首次使用需下载模型文件，模型缓存在浏览器中供后续复用。需要访问 huggingface.co 下载模型，将在保存时申请该权限。
+    </div>
+    <div class="btn-row">
+      <button class="test-btn" id="testLocalBtn">测试推理</button>
+      <button class="test-btn" id="testServiceBtn" disabled>测试服务</button>
+      <span class="save-status" id="testLocalStatus"></span>
+    </div>
   </div>
 
   <hr class="section-divider">
