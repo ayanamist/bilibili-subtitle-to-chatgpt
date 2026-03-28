@@ -155,6 +155,13 @@ async function handleSelfHostedTranscribe(msg) {
         } catch (e) {
           showOverlay('排队等待中...');
         }
+      } else if (event === 'progress') {
+        try {
+          const parsed = JSON.parse(data);
+          showOverlay(`正在转写中... ${parsed.percent}%`);
+        } catch (e) {
+          showOverlay('正在转写中...');
+        }
       } else if (event === 'converting') {
         showOverlay('正在转换中...');
       } else if (event === 'result') {
