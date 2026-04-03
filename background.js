@@ -313,6 +313,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             model,
             device,
             requestId,
+            allowDownload: true,
           });
           const elapsed = inferenceStartTime ? ((Date.now() - inferenceStartTime) / 1000).toFixed(1) : null;
           if (!result || !result.ok) {

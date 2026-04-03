@@ -64,7 +64,7 @@ function getDtype(model, device) {
 let _pipelineCache = null; // { model, device, pipe }
 let _pipelineLoading = null; // 正在进行的加载 Promise
 
-async function getPipeline(model, device, onProgress) {
+async function getPipeline(model, device, onProgress, allowDownload = false) {
   // 如果缓存命中，直接返回
   if (_pipelineCache && _pipelineCache.model === model && _pipelineCache.device === device) {
     return _pipelineCache.pipe;
@@ -79,7 +79,7 @@ async function getPipeline(model, device, onProgress) {
 
   _pipelineLoading = (async () => {
     const T = await loadTransformers();
-    console.log('[offscreen] getPipeline: 开始加载 pipeline, model=', model, ', device=', device);
+    console.log('[offscreen] getPipeline: 开始加载 pipeline, model=', model, ', device=', device, ', allowDownload=', allowDownload);
 
     const pipeOpts = {
       device,
@@ -87,8 +87,9 @@ async function getPipeline(model, device, onProgress) {
       progress_callback: onProgress,
     };
 
-    // 仅允许离线加载（local_files_only），缓存命中时不发任何网络请求；
-    // 若缓存不存在则报错，引导用户到选项页通过"测试推理"触发缓存下载。
+    // 优先尝试离线加载（local_files_only），缓存命中时不发任何网络请求；
+    // 若缓存不存在且 allowDownload=true（来自选项页测试推理），则回退到在线下载；
+    // 否则报错，引导用户到选项页通过"测试推理"触发缓存下载。
     let pipe;
     try {
       // local_files_only 需要 allowLocalModels=true（transformers.js 内部会校验）；
@@ -107,8 +108,15 @@ async function getPipeline(model, device, onProgress) {
         console.error('[offscreen] getPipeline: 离线加载失败（非缓存缺失错误）:', e.message, '\n', e.stack ?? '');
         throw e;
       }
-      console.warn('[offscreen] getPipeline: 本地缓存未命中，拒绝后台下载。原始错误:', e.message);
-      throw new Error('模型尚未缓存，请先到扩展选项页点击"测试推理"完成模型下载后重试。');
+      if (!allowDownload) {
+        console.warn('[offscreen] getPipeline: 本地缓存未命中，拒绝后台下载。原始错误:', e.message);
+        throw new Error('模型尚未缓存，请先到扩展选项页点击"测试推理"完成模型下载后重试。');
+      }
+      // allowDownload=true：来自选项页测试推理，允许在线下载模型
+      console.log('[offscreen] getPipeline: 本地缓存未命中，开始在线下载模型...');
+      T.env.allowLocalModels = false;
+      pipe = await T.pipeline('automatic-speech-recognition', model, pipeOpts);
+      console.log('[offscreen] getPipeline: 在线下载并加载成功');
     } finally {
       T.env.allowLocalModels = false;
     }
@@ -243,7 +251,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.target !== 'offscreen') return false;
 
   if (msg.action === 'transcribe') {
-    const { model, device, audioBase64, requestId } = msg;
+    const { model, device, audioBase64, requestId, allowDownload } = msg;
 
     (async () => {
       // 建立逃逸错误接收通道
@@ -261,9 +269,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }
         };
 
-        // 加载 pipeline（首次会触发模型下载）
+        // 加载 pipeline（allowDownload=true 时首次会触发模型下载）
         sendProgressToBackground(requestId, { status: 'loading_model', text: '正在加载模型...' });
-        const pipe = await Promise.race([getPipeline(model, device, onProgress), escapedError]);
+        const pipe = await Promise.race([getPipeline(model, device, onProgress, !!allowDownload), escapedError]);
 
         // 解码音频
         sendProgressToBackground(requestId, { status: 'decoding_audio', text: '正在解码音频...' });
