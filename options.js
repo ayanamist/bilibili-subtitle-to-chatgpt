@@ -231,7 +231,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 (async () => {
   if (navigator.gpu) {
     try {
-      const adapter = await navigator.gpu.requestAdapter();
+      const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
       if (adapter) {
         webgpuStatus.textContent = '✓ 支持';
         webgpuStatus.className = 'webgpu-status supported';

@@ -81,8 +81,21 @@ async function getPipeline(model, device, onProgress, allowDownload = false) {
     const T = await loadTransformers();
     console.log('[offscreen] getPipeline: 开始加载 pipeline, model=', model, ', device=', device, ', allowDownload=', allowDownload);
 
+    // WebGPU: 自行创建 GPUDevice 并指定 powerPreference，避免在多 GPU 设备上选到集显
+    let resolvedDevice = device;
+    if (device === 'webgpu' && navigator.gpu) {
+      try {
+        const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+        if (adapter) {
+          resolvedDevice = await adapter.requestDevice();
+        }
+      } catch (e) {
+        console.warn('[offscreen] getPipeline: 创建高性能 GPUDevice 失败，回退到默认 webgpu:', e.message);
+      }
+    }
+
     const pipeOpts = {
-      device,
+      device: resolvedDevice,
       dtype: getDtype(model, device),
       progress_callback: onProgress,
     };
