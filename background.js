@@ -1,13 +1,15 @@
 'use strict';
 
-// Resolve the current index of a tab by its stable ID.
+// Resolve the current index and windowId of a tab by its stable ID.
 // Tab IDs never change, but indices shift when tabs are opened/closed/moved.
-async function getTabIndex(tabId) {
+// Capture windowId early (before long async operations) so new tabs always
+// open in the original window even if the user switches focus elsewhere.
+async function getTabInfo(tabId) {
   try {
     const t = await chrome.tabs.get(tabId);
-    return t.index;
+    return { index: t.index, windowId: t.windowId };
   } catch (e) {
-    return 0;
+    return { index: 0, windowId: undefined };
   }
 }
 
@@ -343,8 +345,8 @@ async function handleTask(msg, notify) {
       if (tempChat) url += '?temporary-chat=true';
 
       notify('STATUS', '正在打开 ChatGPT...');
-      const openerIndex = await getTabIndex(openerTabId);
-      const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1 });
+      const { index: openerIndex, windowId: openerWindowId } = await getTabInfo(openerTabId);
+      const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1, windowId: openerWindowId });
       targetTabId = tab.id;
       if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
       await waitForTabLoad(targetTabId);
@@ -505,11 +507,12 @@ async function handleTask(msg, notify) {
       }
 
       biliOverlay('STATUS', '正在打开 AI Studio...');
-      const openerIndex = await getTabIndex(openerTabId);
+      const { index: openerIndex, windowId: openerWindowId } = await getTabInfo(openerTabId);
       const tab = await chrome.tabs.create({
         url: 'https://aistudio.google.com/prompts/new_chat',
         active: false,
         index: openerIndex + 1,
+        windowId: openerWindowId,
       });
       targetTabId = tab.id;
       await waitForTabLoad(targetTabId);
@@ -551,8 +554,8 @@ async function sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgO
     let url = 'https://chatgpt.com/';
     if (tempChat) url += '?temporary-chat=true';
 
-    const openerIndex = await getTabIndex(openerTabId);
-    const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1 });
+    const { index: openerIndex, windowId: tabWindowId } = await getTabInfo(openerTabId);
+    const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1, tabWindowId });
     targetTabId = tab.id;
     if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
     await waitForTabLoad(targetTabId);
