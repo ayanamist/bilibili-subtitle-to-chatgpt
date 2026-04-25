@@ -118,6 +118,11 @@
     const dt = new DataTransfer();
     dt.items.add(file);
 
+    // Snapshot existing tiles before dispatching so we only wait for NEW ones
+    const existingTiles = new Set(
+      document.querySelectorAll('[class*="file-tile"][role="group"]')
+    );
+
     const fileInput = document.querySelector('input[type="file"]');
     if (fileInput) {
       fileInput.files = dt.files;
@@ -134,20 +139,29 @@
       dropTarget.dispatchEvent(drop);
     }
 
-    await waitForFileAttachment(fileName);
+    await waitForFileAttachment(fileName, existingTiles);
   }
 
   // Wait until the file tile card appears AND its remove button is interactive,
   // which reliably indicates the upload is complete.
-  function waitForFileAttachment(fileName) {
+  // existingTiles: Set of tile elements already in the DOM before this upload started.
+  function waitForFileAttachment(fileName, existingTiles = new Set()) {
     return new Promise((resolve, reject) => {
       let attempts = 0;
       const maxAttempts = 60; // 12 seconds max
       const timer = setInterval(() => {
         attempts++;
-        // Prefer matching by exact filename aria-label; fall back to any file-tile
-        const fileTile = document.querySelector(`[class*="file-tile"][role="group"][aria-label="${CSS.escape(fileName)}"]`)
-          || document.querySelector('[class*="file-tile"][role="group"]');
+        // Only consider tiles that are NEW (not present before we started the upload)
+        let fileTile = null;
+        for (const tile of document.querySelectorAll('[class*="file-tile"][role="group"]')) {
+          if (existingTiles.has(tile)) continue;
+          // Prefer exact filename match; otherwise take the first new tile
+          if (tile.getAttribute('aria-label') === fileName) {
+            fileTile = tile;
+            break;
+          }
+          if (!fileTile) fileTile = tile;
+        }
         // The remove/action button (class "behavior-btn") only appears once the upload is fully complete
         const removeBtn = fileTile?.querySelector('button[class*="behavior-btn"]');
         if (fileTile && removeBtn) {
