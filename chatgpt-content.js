@@ -368,18 +368,8 @@
       // Reply immediately so popup can switch tab without waiting
       sendResponse({ ok: true });
 
-      // Immediately set tab title and keep reverting any changes until API rename completes
-      let titleTimer = null;
-      if (msg.videoTitle && !msg.tempChat) {
-        document.title = msg.videoTitle;
-        titleTimer = setInterval(() => {
-          if (document.title !== msg.videoTitle) {
-            document.title = msg.videoTitle;
-          }
-        }, 200);
-      }
-
       (async () => {
+        let titleTimer = null;
         const bvidPrefix = msg.bvid ? `[${msg.bvid}] ` : '';
         try {
           showStatus('正在添加字幕文件...');
@@ -388,6 +378,15 @@
           inputPrompt(await loadPrompt());
           showStatus('正在发送...');
           await clickSend();
+          // Set tab title after send button is successfully clicked
+          if (msg.videoTitle && !msg.tempChat) {
+            document.title = msg.videoTitle;
+            titleTimer = setInterval(() => {
+              if (document.title !== msg.videoTitle) {
+                document.title = msg.videoTitle;
+              }
+            }, 200);
+          }
           if (msg.bgOpen) scrollToResponseOnTabFocus();
           // Rename the new conversation to the video title via the sidebar UI (skip for temporary chats)
           if (msg.videoTitle && !msg.tempChat) {
