@@ -554,8 +554,8 @@ async function sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgO
     let url = 'https://chatgpt.com/';
     if (tempChat) url += '?temporary-chat=true';
 
-    const { index: openerIndex, windowId: tabWindowId } = await getTabInfo(openerTabId);
-    const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1, tabWindowId });
+    const { index: openerIndex, windowId } = await getTabInfo(openerTabId);
+    const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1, windowId });
     targetTabId = tab.id;
     if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
     await waitForTabLoad(targetTabId);
