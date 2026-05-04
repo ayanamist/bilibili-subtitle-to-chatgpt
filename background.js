@@ -346,9 +346,8 @@ async function handleTask(msg, notify) {
 
       notify('STATUS', '正在打开 ChatGPT...');
       const { index: openerIndex, windowId: openerWindowId } = await getTabInfo(openerTabId);
-      const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1, windowId: openerWindowId });
+      const tab = await chrome.tabs.create({ url, active: !bgOpen, index: openerIndex + 1, windowId: openerWindowId });
       targetTabId = tab.id;
-      if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
       await waitForTabLoad(targetTabId);
 
       notify('STATUS', '正在连接 ChatGPT...');
@@ -510,13 +509,12 @@ async function handleTask(msg, notify) {
       const { index: openerIndex, windowId: openerWindowId } = await getTabInfo(openerTabId);
       const tab = await chrome.tabs.create({
         url: 'https://aistudio.google.com/prompts/new_chat',
-        active: false,
+        active: !bgOpen,
         index: openerIndex + 1,
         windowId: openerWindowId,
       });
       targetTabId = tab.id;
       await waitForTabLoad(targetTabId);
-      if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
 
       // Content script is injected at document_start and handles DOM readiness internally.
       biliOverlay('STATUS', '正在发送音频到 AI Studio...');
@@ -555,9 +553,8 @@ async function sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgO
     if (tempChat) url += '?temporary-chat=true';
 
     const { index: openerIndex, windowId } = await getTabInfo(openerTabId);
-    const tab = await chrome.tabs.create({ url, active: false, index: openerIndex + 1, windowId });
+    const tab = await chrome.tabs.create({ url, active: !bgOpen, index: openerIndex + 1, windowId });
     targetTabId = tab.id;
-    if (!bgOpen) await chrome.tabs.update(targetTabId, { active: true });
     await waitForTabLoad(targetTabId);
 
     overlayMsg(targetTabId, { type: 'EXT_STATUS', text: '正在连接 ChatGPT...' });
