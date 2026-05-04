@@ -334,6 +334,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+// 打开 ChatGPT 标签页并发送文件（核心逻辑，供多处复用）
+// 返回 { ok: boolean, error?: string }
+async function _openChatGPTAndSend({ file, openerTabId, bgOpen, tempChat, biliTabId, videoTitle, bvid }) {
+  let targetTabId = null;
+  try {
+    let url = 'https://chatgpt.com/';
+    if (tempChat) url += '?temporary-chat=true';
+
+    const { index: openerIndex, windowId } = await getTabInfo(openerTabId);
+    const tab = await chrome.tabs.create({ url, active: !bgOpen, index: openerIndex + 1, openerTabId: biliTabId, windowId });
+    targetTabId = tab.id;
+    await waitForTabLoad(targetTabId);
+
+    overlayMsg(targetTabId, { type: 'EXT_STATUS', text: '正在连接 ChatGPT...' });
+    const readyResult = await ensureChatGPTReady(targetTabId);
+    if (readyResult !== 'ready') {
+      const errMsg = readyResult === 'not-logged-in'
+        ? '请先登录 chatgpt.com，然后重试。'
+        : '无法连接到 ChatGPT 页面，请刷新 chatgpt.com 后重试。';
+      overlayMsg(targetTabId, { type: 'EXT_ERROR', text: errMsg });
+      return { ok: false, error: errMsg };
+    }
+
+    await chrome.tabs.sendMessage(targetTabId, {
+      type: 'CHATGPT_PREPARE_PROMPT',
+      file,
+      bgOpen,
+      tempChat,
+      videoTitle,
+      bvid,
+    });
+    return { ok: true };
+  } catch (e) {
+    if (targetTabId) overlayMsg(targetTabId, { type: 'EXT_ERROR', text: `错误：${e.message}` });
+    return { ok: false, error: e.message };
+  }
+}
+
 // Main task handler — runs in the service worker, independent of popup lifecycle
 async function handleTask(msg, notify) {
   const { taskType, openerTabId, bgOpen, tempChat, file, audioUrls, biliTabId, videoTitle, bvid } = msg;
@@ -341,37 +379,12 @@ async function handleTask(msg, notify) {
 
   try {
     if (taskType === 'chatgpt') {
-      let url = 'https://chatgpt.com/';
-      if (tempChat) url += '?temporary-chat=true';
-
       notify('STATUS', '正在打开 ChatGPT...');
-      const { index: openerIndex, windowId: openerWindowId } = await getTabInfo(openerTabId);
-      const tab = await chrome.tabs.create({ url, active: !bgOpen, index: openerIndex + 1, windowId: openerWindowId });
-      targetTabId = tab.id;
-      await waitForTabLoad(targetTabId);
-
-      notify('STATUS', '正在连接 ChatGPT...');
-      overlayMsg(targetTabId, { type: 'EXT_STATUS', text: '正在连接 ChatGPT...' });
-      const readyResult = await ensureChatGPTReady(targetTabId);
-      if (readyResult !== 'ready') {
-        const errMsg = readyResult === 'not-logged-in'
-          ? '请先登录 chatgpt.com，然后重试。'
-          : '无法连接到 ChatGPT 页面，请刷新 chatgpt.com 后重试。';
-        notify('ERROR', errMsg);
-        overlayMsg(targetTabId, { type: 'EXT_ERROR', text: errMsg });
+      const result = await _openChatGPTAndSend({ file, openerTabId, bgOpen, tempChat, biliTabId, videoTitle, bvid });
+      if (!result.ok) {
+        notify('ERROR', result.error);
         return;
       }
-
-      notify('STATUS', '正在发送字幕文件...');
-      await chrome.tabs.sendMessage(targetTabId, {
-        type: 'CHATGPT_PREPARE_PROMPT',
-        file,
-        bgOpen,
-        tempChat,
-        videoTitle,
-        bvid,
-      });
-
       notify('DONE', bgOpen ? '已在后台打开 ChatGPT 页面。' : '已切换到 ChatGPT 页面。');
 
     } else if (taskType === 'selfhosted') {
@@ -475,6 +488,7 @@ async function handleTask(msg, notify) {
           openerTabId,
           bgOpen,
           tempChat,
+          biliTabId,
         });
 
         if (!chatResult.ok) {
@@ -511,6 +525,7 @@ async function handleTask(msg, notify) {
         url: 'https://aistudio.google.com/prompts/new_chat',
         active: !bgOpen,
         index: openerIndex + 1,
+        openerTabId: biliTabId,
         windowId: openerWindowId,
       });
       targetTabId = tab.id;
@@ -543,43 +558,18 @@ async function handleTask(msg, notify) {
 }
 
 // 发送 SRT 字幕到 ChatGPT（供 bilibili content script 调用）
-async function sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat }) {
+async function sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat, biliTabId }) {
   const title = videoTitle || 'bilibili-subtitle';
   const fileName = bvid ? `${bvid}_${title}.srt` : `${title}.srt`;
-
-  let targetTabId = null;
-  try {
-    let url = 'https://chatgpt.com/';
-    if (tempChat) url += '?temporary-chat=true';
-
-    const { index: openerIndex, windowId } = await getTabInfo(openerTabId);
-    const tab = await chrome.tabs.create({ url, active: !bgOpen, index: openerIndex + 1, windowId });
-    targetTabId = tab.id;
-    await waitForTabLoad(targetTabId);
-
-    overlayMsg(targetTabId, { type: 'EXT_STATUS', text: '正在连接 ChatGPT...' });
-    const readyResult = await ensureChatGPTReady(targetTabId);
-    if (readyResult !== 'ready') {
-      const errMsg = readyResult === 'not-logged-in'
-        ? '请先登录 chatgpt.com，然后重试。'
-        : '无法连接到 ChatGPT 页面，请刷新 chatgpt.com 后重试。';
-      overlayMsg(targetTabId, { type: 'EXT_ERROR', text: errMsg });
-      return { ok: false, error: errMsg };
-    }
-
-    await chrome.tabs.sendMessage(targetTabId, {
-      type: 'CHATGPT_PREPARE_PROMPT',
-      file: { name: fileName, content: srtContent },
-      bgOpen,
-      tempChat,
-      videoTitle,
-      bvid,
-    });
-    return { ok: true };
-  } catch (e) {
-    if (targetTabId) overlayMsg(targetTabId, { type: 'EXT_ERROR', text: `错误：${e.message}` });
-    return { ok: false, error: e.message };
-  }
+  return _openChatGPTAndSend({
+    file: { name: fileName, content: srtContent },
+    openerTabId,
+    bgOpen,
+    tempChat,
+    biliTabId,
+    videoTitle,
+    bvid,
+  });
 }
 
 // 处理来自 bilibili content script 的 SSE 代理 port 连接
@@ -659,7 +649,8 @@ chrome.runtime.onConnect.addListener((port) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type !== 'SELF_HOSTED_SRT_RESULT') return false;
   const { srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat } = msg;
-  sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat })
+  const biliTabId = sender.tab?.id;
+  sendSrtToChatGPT({ srtContent, videoTitle, bvid, openerTabId, bgOpen, tempChat, biliTabId })
     .then(result => sendResponse(result))
     .catch(e => sendResponse({ ok: false, error: e.message }));
   return true; // async
