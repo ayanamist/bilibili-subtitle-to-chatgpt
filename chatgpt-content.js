@@ -173,75 +173,64 @@
     );
     console.log('[ext] attachFile: existingTiles count=', existingTiles.size);
 
-    const fileInput = document.querySelector('input[type="file"]');
-    if (fileInput) {
-      console.log('[ext] attachFile: using fileInput strategy');
-      fileInput.files = dt.files;
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-    } else {
-      const dropTarget = findTextarea() || document.querySelector('main');
-      console.log('[ext] attachFile: fileInput not found, using drag-and-drop strategy, dropTarget=', dropTarget?.tagName, dropTarget?.id);
-      if (!dropTarget) throw new Error('找不到文件上传区域');
-
-      const dragEnter = new DragEvent('dragenter', { bubbles: true, dataTransfer: dt });
-      const dragOver = new DragEvent('dragover', { bubbles: true, dataTransfer: dt });
-      const drop = new DragEvent('drop', { bubbles: true, dataTransfer: dt });
-      dropTarget.dispatchEvent(dragEnter);
-      dropTarget.dispatchEvent(dragOver);
-      dropTarget.dispatchEvent(drop);
-    }
+    const fileInput = document.querySelector('#upload-files') || document.querySelector('input[type="file"]');
+    if (!fileInput) throw new Error('找不到文件上传入口（#upload-files）');
+    console.log('[ext] attachFile: using fileInput strategy, id=', fileInput.id);
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
     // Return existingTiles so the caller can verify attachment later (right before send).
     console.log('[ext] attachFile: upload triggered, returning existingTiles for later verification');
     return existingTiles;
   }
 
-  // Wait until the file tile card appears AND its remove button is interactive,
-  // which reliably indicates the upload is complete.
+  // Wait until the file upload is complete, using the send button's disabled state as the
+  // authoritative signal: ChatGPT keeps the send button disabled while any upload is in
+  // progress, and re-enables it only when all uploads finish (success or failure).
+  //
+  // After the send button re-enables we then verify the file tile is still in the DOM.
+  // If the tile is gone → upload failed (ChatGPT removed it on error).
+  //
+  // NOTE: behavior-btn appears immediately on tile creation, NOT after upload completes,
+  // so it cannot be used as an upload-success signal.
+  //
   // existingTiles: Set of tile elements already in the DOM before this upload started.
   function waitForFileAttachment(fileName, existingTiles = new Set()) {
     return new Promise((resolve, reject) => {
       let attempts = 0;
-      const maxAttempts = 60; // 12 seconds max
+      const maxAttempts = 150; // 30 seconds max
       const timer = setInterval(() => {
         attempts++;
-        // Only consider tiles that are NEW (not present before we started the upload)
+        const btn = findSendButton();
         const allTiles = document.querySelectorAll('[class*="file-tile"][role="group"]');
         const newTiles = Array.from(allTiles).filter(t => !existingTiles.has(t));
+        const fileTile = newTiles.find(t => t.getAttribute('aria-label') === fileName) ?? newTiles[0] ?? null;
+
         if (attempts <= 5 || attempts % 10 === 0) {
           console.log('[ext] waitForFileAttachment: attempt', attempts,
-            'allTiles=', allTiles.length,
+            'sendDisabled=', btn?.disabled,
             'newTiles=', newTiles.length,
-            'looking for=', fileName);
-          if (newTiles.length > 0) {
-            console.log('[ext] waitForFileAttachment: new tile aria-labels=',
-              newTiles.map(t => t.getAttribute('aria-label')));
-          }
+            'fileTile=', fileTile?.getAttribute('aria-label') ?? 'none');
         }
-        let fileTile = null;
-        for (const tile of newTiles) {
-          // Prefer exact filename match; otherwise take the first new tile
-          if (tile.getAttribute('aria-label') === fileName) {
-            fileTile = tile;
-            break;
-          }
-          if (!fileTile) fileTile = tile;
-        }
-        // The remove/action button (class "behavior-btn") only appears once the upload is fully complete
-        const removeBtn = fileTile?.querySelector('button[class*="behavior-btn"]');
-        if (fileTile && removeBtn) {
-          const ariaLabel = fileTile.getAttribute('aria-label');
-          console.log('[ext] waitForFileAttachment: file tile found, aria-label=', ariaLabel,
-            'labelMatchesFileName=', ariaLabel === fileName);
+
+        // Send button enabled → upload finished (success or failure)
+        if (btn && !btn.disabled) {
           clearInterval(timer);
-          setTimeout(resolve, 200);
+          if (fileTile) {
+            console.log('[ext] waitForFileAttachment: upload success, tile=', fileTile.getAttribute('aria-label'));
+            resolve();
+          } else {
+            console.warn('[ext] waitForFileAttachment: send button enabled but file tile is gone → upload failed');
+            reject(new Error('字幕文件上传失败（文件块已消失），请重试'));
+          }
           return;
         }
+
         if (attempts >= maxAttempts) {
-          console.warn('[ext] waitForFileAttachment: timed out after', attempts, 'attempts.',
-            'allTiles=', allTiles.length, 'newTiles=', newTiles.length);
           clearInterval(timer);
-          reject(new Error('字幕文件未能成功附加，请重试'));
+          console.warn('[ext] waitForFileAttachment: timed out. sendDisabled=', btn?.disabled,
+            'newTiles=', newTiles.length);
+          reject(new Error('字幕文件上传超时，请重试'));
         }
       }, 200);
     });
