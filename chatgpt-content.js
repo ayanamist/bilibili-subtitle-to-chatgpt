@@ -1,5 +1,46 @@
 // ChatGPT page content script: attach SRT file and send
 (() => {
+  // --- Last received subtitle file (for manual save) ---
+  let _lastFile = null; // { name: string, content: string }
+
+  // --- Save subtitle button ---
+  let _saveBtn = null;
+
+  function showSaveButton(fileName, fileContent) {
+    _lastFile = { name: fileName, content: fileContent };
+    if (_saveBtn) return; // already shown
+
+    _saveBtn = document.createElement('button');
+    _saveBtn.textContent = '⬇ 保存字幕文件';
+    _saveBtn.title = '字幕文件上传失败时，可手动下载后再上传';
+    _saveBtn.style.cssText =
+      'position:fixed;bottom:80px;right:16px;z-index:999999;' +
+      'background:#10a37f;color:#fff;border:none;cursor:pointer;' +
+      'padding:8px 14px;border-radius:8px;font-size:13px;' +
+      'font-family:system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);' +
+      'display:flex;align-items:center;gap:6px;';
+    _saveBtn.addEventListener('click', () => {
+      if (!_lastFile) return;
+      const blob = new Blob([_lastFile.content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = _lastFile.name;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
+    });
+    document.body.appendChild(_saveBtn);
+  }
+
+  function hideSaveButton() {
+    if (_saveBtn) {
+      _saveBtn.remove();
+      _saveBtn = null;
+    }
+    _lastFile = null;
+  }
+
   // --- Status overlay ---
 
   let statusOverlay = null;
@@ -114,7 +155,15 @@
   }
 
   async function attachFile(fileName, fileContent) {
+    const contentType = typeof fileContent;
+    const contentLen = contentType === 'string' ? fileContent.length : (fileContent instanceof Uint8Array || Array.isArray(fileContent)) ? fileContent.length : -1;
+    console.log('[ext] attachFile: fileName=', fileName,
+      'contentType=', contentType,
+      'contentLength=', contentLen,
+      'preview=', contentType === 'string' ? fileContent.slice(0, 100) : '(non-string)');
+
     const file = new File([fileContent], fileName, { type: 'text/plain' });
+    console.log('[ext] attachFile: File object size=', file.size, 'name=', file.name);
     const dt = new DataTransfer();
     dt.items.add(file);
 
@@ -122,13 +171,16 @@
     const existingTiles = new Set(
       document.querySelectorAll('[class*="file-tile"][role="group"]')
     );
+    console.log('[ext] attachFile: existingTiles count=', existingTiles.size);
 
     const fileInput = document.querySelector('input[type="file"]');
     if (fileInput) {
+      console.log('[ext] attachFile: using fileInput strategy');
       fileInput.files = dt.files;
       fileInput.dispatchEvent(new Event('change', { bubbles: true }));
     } else {
       const dropTarget = findTextarea() || document.querySelector('main');
+      console.log('[ext] attachFile: fileInput not found, using drag-and-drop strategy, dropTarget=', dropTarget?.tagName, dropTarget?.id);
       if (!dropTarget) throw new Error('找不到文件上传区域');
 
       const dragEnter = new DragEvent('dragenter', { bubbles: true, dataTransfer: dt });
@@ -139,7 +191,9 @@
       dropTarget.dispatchEvent(drop);
     }
 
-    await waitForFileAttachment(fileName, existingTiles);
+    // Return existingTiles so the caller can verify attachment later (right before send).
+    console.log('[ext] attachFile: upload triggered, returning existingTiles for later verification');
+    return existingTiles;
   }
 
   // Wait until the file tile card appears AND its remove button is interactive,
@@ -152,9 +206,20 @@
       const timer = setInterval(() => {
         attempts++;
         // Only consider tiles that are NEW (not present before we started the upload)
+        const allTiles = document.querySelectorAll('[class*="file-tile"][role="group"]');
+        const newTiles = Array.from(allTiles).filter(t => !existingTiles.has(t));
+        if (attempts <= 5 || attempts % 10 === 0) {
+          console.log('[ext] waitForFileAttachment: attempt', attempts,
+            'allTiles=', allTiles.length,
+            'newTiles=', newTiles.length,
+            'looking for=', fileName);
+          if (newTiles.length > 0) {
+            console.log('[ext] waitForFileAttachment: new tile aria-labels=',
+              newTiles.map(t => t.getAttribute('aria-label')));
+          }
+        }
         let fileTile = null;
-        for (const tile of document.querySelectorAll('[class*="file-tile"][role="group"]')) {
-          if (existingTiles.has(tile)) continue;
+        for (const tile of newTiles) {
           // Prefer exact filename match; otherwise take the first new tile
           if (tile.getAttribute('aria-label') === fileName) {
             fileTile = tile;
@@ -165,11 +230,16 @@
         // The remove/action button (class "behavior-btn") only appears once the upload is fully complete
         const removeBtn = fileTile?.querySelector('button[class*="behavior-btn"]');
         if (fileTile && removeBtn) {
+          const ariaLabel = fileTile.getAttribute('aria-label');
+          console.log('[ext] waitForFileAttachment: file tile found, aria-label=', ariaLabel,
+            'labelMatchesFileName=', ariaLabel === fileName);
           clearInterval(timer);
           setTimeout(resolve, 200);
           return;
         }
         if (attempts >= maxAttempts) {
+          console.warn('[ext] waitForFileAttachment: timed out after', attempts, 'attempts.',
+            'allTiles=', allTiles.length, 'newTiles=', newTiles.length);
           clearInterval(timer);
           reject(new Error('字幕文件未能成功附加，请重试'));
         }
@@ -371,11 +441,22 @@
       (async () => {
         let titleTimer = null;
         const bvidPrefix = msg.bvid ? `[${msg.bvid}] ` : '';
+        console.log('[ext] CHATGPT_PREPARE_PROMPT received:',
+          'file.name=', msg.file?.name,
+          'file.content type=', typeof msg.file?.content,
+          'file.content length=', typeof msg.file?.content === 'string' ? msg.file.content.length : '(non-string)',
+          'bgOpen=', msg.bgOpen, 'tempChat=', msg.tempChat);
+        let fileAttached = false;
         try {
+          showSaveButton(msg.file.name, msg.file.content);
           showStatus('正在添加字幕文件...');
-          await attachFile(msg.file.name, msg.file.content);
+          const existingTiles = await attachFile(msg.file.name, msg.file.content);
           showStatus('正在输入提示词...');
           inputPrompt(await loadPrompt());
+          showStatus('正在等待文件上传...');
+          await waitForFileAttachment(msg.file.name, existingTiles);
+          fileAttached = true;
+          console.log('[ext] CHATGPT_PREPARE_PROMPT: file attached successfully, proceeding to send');
           showStatus('正在发送...');
           await clickSend();
           // Set tab title after send button is successfully clicked
@@ -408,11 +489,17 @@
               return;
             }
           }
+          hideSaveButton();
           hideStatus();
         } catch (e) {
           clearInterval(titleTimer);
-          console.error('CHATGPT_PREPARE_PROMPT failed:', e);
-          showError(`${bvidPrefix}错误：${e.message}`);
+          console.error('[ext] CHATGPT_PREPARE_PROMPT failed, fileAttached=', fileAttached, 'error=', e);
+          if (!fileAttached) {
+            console.warn('[ext] 文件未成功附加，已跳过自动提交。请检查 DevTools Console 中的 debug 日志。');
+            showError(`${bvidPrefix}字幕文件附加失败（未自动提交）：${e.message}`);
+          } else {
+            showError(`${bvidPrefix}错误：${e.message}`);
+          }
         }
       })();
       return;
