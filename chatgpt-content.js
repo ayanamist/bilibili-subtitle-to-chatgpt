@@ -448,6 +448,8 @@
           console.log('[ext] CHATGPT_PREPARE_PROMPT: file attached successfully, proceeding to send');
           showStatus('正在发送...');
           await clickSend();
+          // Submission succeeded — hide the save button now regardless of what happens next
+          hideSaveButton();
           // Set tab title after send button is successfully clicked
           if (msg.videoTitle && !msg.tempChat) {
             document.title = msg.videoTitle;
@@ -478,7 +480,6 @@
               return;
             }
           }
-          hideSaveButton();
           hideStatus();
         } catch (e) {
           clearInterval(titleTimer);
