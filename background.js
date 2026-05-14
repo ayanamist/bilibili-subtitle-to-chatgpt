@@ -14,7 +14,7 @@ async function getTabInfo(tabId) {
 }
 
 // Wait for a tab to fully load (status=complete) + extra SPA hydration delay
-function waitForTabLoad(tabId, timeout = 30000) {
+function waitForTabLoad(tabId, timeout = 120_000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener);
