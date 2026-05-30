@@ -91,7 +91,7 @@ function setStatus(msg) {
 async function fetchVideoInfo(pageUrl) {
   setStatus('正在获取视频信息...');
 
-  const bvMatch = pageUrl.match(/\/video\/(BV[\w]+)/);
+  const bvMatch = pageUrl.match(/\/video\/(BV[\w]+)/) || pageUrl.match(/[?&]bvid=(BV[\w]+)/);
   if (!bvMatch) {
     throw new Error('URL 中未找到 BV 号');
   }
@@ -199,7 +199,7 @@ async function run() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const pageUrl = tab.url || '';
 
-    if (!/bilibili\.com\/video\//.test(pageUrl)) {
+    if (!/bilibili\.com\/(video\/|list\/watchlater\/)/.test(pageUrl)) {
       showError('请在 B 站视频页面使用此扩展。');
       return;
     }
@@ -371,7 +371,7 @@ runBtn.addEventListener('click', run);
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const pageUrl = tab.url || '';
-    if (!/bilibili\.com\/video\//.test(pageUrl)) {
+    if (!/bilibili\.com\/(video\/|list\/watchlater\/)/.test(pageUrl)) {
       runBtn.disabled = true;
       setStatus('请在 B 站视频页面使用');
       return;
