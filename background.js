@@ -58,6 +58,36 @@ const _progressNotifyMap = new Map();
 // For local transcribe: map requestId -> notify function
 const _localProgressMap = new Map();
 
+// Track active audio transcription tasks by source Bilibili tab.
+// Value shape: { taskType: string, statusText: string }
+const _activeTranscribeTaskMap = new Map();
+
+function _isAudioTranscribeTask(taskType) {
+  return taskType === 'selfhosted' || taskType === 'local' || taskType === 'aistudio';
+}
+
+function _setActiveTranscribeTask(biliTabId, taskType, statusText) {
+  if (biliTabId == null || !_isAudioTranscribeTask(taskType)) return;
+  _activeTranscribeTaskMap.set(biliTabId, { taskType, statusText });
+}
+
+function _updateActiveTranscribeTask(biliTabId, statusText) {
+  if (biliTabId == null) return;
+  const current = _activeTranscribeTaskMap.get(biliTabId);
+  if (!current) return;
+  current.statusText = statusText;
+}
+
+function _clearActiveTranscribeTask(biliTabId) {
+  if (biliTabId == null) return;
+  _activeTranscribeTaskMap.delete(biliTabId);
+}
+
+function _getActiveTranscribeTask(biliTabId) {
+  if (biliTabId == null) return null;
+  return _activeTranscribeTaskMap.get(biliTabId) || null;
+}
+
 // ---- 本地推理并发队列 ----
 // 限制同时运行的推理数（默认 1），防止显存溢出
 let _inferenceRunning = 0;
@@ -93,7 +123,7 @@ async function _runWithConcurrencyLimit(fn, notify) {
   });
 }
 
-chrome.runtime.onMessage.addListener((msg, sender) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'BILIBILI_FETCH_PROGRESS') {
     const tabId = sender.tab?.id;
     const notify = tabId != null && _progressNotifyMap.get(tabId);
@@ -129,6 +159,21 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       }
     }
     return;
+  }
+  if (msg.type === 'GET_TAB_TRANSCRIBE_STATUS') {
+    const task = _getActiveTranscribeTask(msg.tabId);
+    sendResponse({ active: !!task, ...(task || {}) });
+    return false;
+  }
+  if (msg.type === 'TRANSCRIBE_TASK_EVENT') {
+    const biliTabId = msg.biliTabId ?? sender.tab?.id;
+    if (msg.state === 'done' || msg.state === 'error') {
+      _clearActiveTranscribeTask(biliTabId);
+    } else if (msg.state === 'status' && msg.text) {
+      _updateActiveTranscribeTask(biliTabId, msg.text);
+    }
+    sendResponse({ ok: true });
+    return false;
   }
 });
 
@@ -399,6 +444,7 @@ async function handleTask(msg, notify) {
         selfHostedUrl,
         selfHostedToken,
         videoTitle,
+        biliTabId,
         openerTabId,
         bgOpen,
         tempChat,
@@ -536,6 +582,7 @@ async function handleTask(msg, notify) {
       await chrome.tabs.sendMessage(targetTabId, {
         type: 'AISTUDIO_UPLOAD_AND_RUN',
         audioData,
+        biliTabId,
         tempChat,
         bgOpen,
         videoTitle,
@@ -667,10 +714,30 @@ chrome.runtime.onConnect.addListener((port) => {
     port.onDisconnect.addListener(() => { portAlive = false; });
 
     function notify(type, text) {
+      if (_isAudioTranscribeTask(msg.taskType) && type === 'STATUS') {
+        _updateActiveTranscribeTask(msg.biliTabId, text);
+      }
       if (!portAlive) return;
       try { port.postMessage({ type, text }); } catch (e) {}
     }
 
-    await handleTask(msg, notify);
+    const existingTask = _getActiveTranscribeTask(msg.biliTabId);
+    if (existingTask && _isAudioTranscribeTask(msg.taskType)) {
+      notify('ERROR', existingTask.statusText || '当前页面已有音频转写任务进行中，请等待完成后再试。');
+      return;
+    }
+
+    const keepLockUntilContentCompletes = msg.taskType === 'selfhosted' || msg.taskType === 'aistudio';
+    if (_isAudioTranscribeTask(msg.taskType)) {
+      _setActiveTranscribeTask(msg.biliTabId, msg.taskType, '音频转写任务已提交，请等待当前任务完成...');
+    }
+
+    try {
+      await handleTask(msg, notify);
+    } finally {
+      if (_isAudioTranscribeTask(msg.taskType) && !keepLockUntilContentCompletes) {
+        _clearActiveTranscribeTask(msg.biliTabId);
+      }
+    }
   });
 });

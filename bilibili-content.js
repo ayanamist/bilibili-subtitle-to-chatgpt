@@ -66,6 +66,15 @@ let _overlay = null;
 let _overlayText = null;
 let _overlayClose = null;
 
+function reportTranscribeTaskEvent(state, text, biliTabId) {
+  chrome.runtime.sendMessage({
+    type: 'TRANSCRIBE_TASK_EVENT',
+    state,
+    text,
+    biliTabId,
+  }).catch(() => {});
+}
+
 function ensureOverlay() {
   if (_overlay) return;
 
@@ -111,7 +120,7 @@ function hideOverlay() {
 async function handleSelfHostedTranscribe(msg) {
   const {
     audioUrls, selfHostedUrl, selfHostedToken,
-    videoTitle, openerTabId, bgOpen, tempChat,
+    videoTitle, openerTabId, bgOpen, tempChat, biliTabId,
   } = msg;
 
   // 获取当前页面 URL 用于提取 bvid
@@ -119,6 +128,7 @@ async function handleSelfHostedTranscribe(msg) {
   const bvid = bvMatch ? bvMatch[1] : '';
 
   showOverlay('正在准备音频转写...');
+  reportTranscribeTaskEvent('status', '正在准备音频转写...', biliTabId);
 
   // 通过 background 代理 SSE 请求（service worker 可访问任意 URL）
   const port = chrome.runtime.connect({ name: 'bilibili-sse-proxy' });
@@ -153,23 +163,29 @@ async function handleSelfHostedTranscribe(msg) {
         try {
           const parsed = JSON.parse(data);
           showOverlay(`排在第 ${parsed.position} 位，等待转写...`);
+          reportTranscribeTaskEvent('status', `排在第 ${parsed.position} 位，等待转写...`, biliTabId);
         } catch (e) {
           showOverlay('排队等待中...');
+          reportTranscribeTaskEvent('status', '排队等待中...', biliTabId);
         }
       } else if (event === 'progress') {
         try {
           const parsed = JSON.parse(data);
           showOverlay(`正在转写中... ${parsed.percent}%`);
+          reportTranscribeTaskEvent('status', `正在转写中... ${parsed.percent}%`, biliTabId);
         } catch (e) {
           showOverlay('正在转写中...');
+          reportTranscribeTaskEvent('status', '正在转写中...', biliTabId);
         }
       } else if (event === 'converting') {
         showOverlay('正在转换中...');
+        reportTranscribeTaskEvent('status', '正在转换中...', biliTabId);
       } else if (event === 'result') {
         try {
           const parsed = JSON.parse(data);
           const srtContent = parsed.srt || '';
           showOverlay('转写完成，正在发送到 ChatGPT...');
+          reportTranscribeTaskEvent('status', '转写完成，正在发送到 ChatGPT...', biliTabId);
           port.disconnect();
 
           // 将 SRT 发送给 background，由 background 打开 ChatGPT 并发送
@@ -185,24 +201,30 @@ async function handleSelfHostedTranscribe(msg) {
 
           if (result && result.ok) {
             showOverlay('已发送到 ChatGPT！');
+            reportTranscribeTaskEvent('done', '已发送到 ChatGPT！', biliTabId);
             setTimeout(hideOverlay, 3000);
           } else {
             showOverlay(`发送失败：${result?.error || '未知错误'}`);
+            reportTranscribeTaskEvent('error', `发送失败：${result?.error || '未知错误'}`, biliTabId);
           }
         } catch (e) {
           showOverlay(`解析结果失败：${e.message}`);
+          reportTranscribeTaskEvent('error', `解析结果失败：${e.message}`, biliTabId);
         }
       } else if (event === 'error') {
         try {
           const parsed = JSON.parse(data);
           showOverlay(`转写失败：${parsed.error || data}`);
+          reportTranscribeTaskEvent('error', `转写失败：${parsed.error || data}`, biliTabId);
         } catch (e) {
           showOverlay(`转写失败：${data}`);
+          reportTranscribeTaskEvent('error', `转写失败：${data}`, biliTabId);
         }
         port.disconnect();
       }
     } else if (sseMsg.type === 'SSE_ERROR') {
       showOverlay(`连接失败：${sseMsg.error}`);
+      reportTranscribeTaskEvent('error', `连接失败：${sseMsg.error}`, biliTabId);
       port.disconnect();
     } else if (sseMsg.type === 'SSE_DONE') {
       // 正常结束（result 事件已处理）
@@ -214,6 +236,7 @@ async function handleSelfHostedTranscribe(msg) {
     if (_overlay && _overlay.style.display !== 'none' &&
         _overlayText && _overlayText.textContent.includes('转换中')) {
       showOverlay('连接已断开，请重试。');
+      reportTranscribeTaskEvent('error', '连接已断开，请重试。', biliTabId);
     }
   });
 }

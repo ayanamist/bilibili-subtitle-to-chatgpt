@@ -5,6 +5,7 @@ let cachedHasSubtitle = null; // true/false/null (null = not checked yet)
 let transcribeService = 'aistudio'; // 'aistudio' | 'selfhosted' | 'local'
 let localModel = null;
 let localDevice = null;
+let activeTranscribeTask = null;
 
 // DOM
 const runBtn = document.getElementById('runBtn');
@@ -28,6 +29,10 @@ tempChatCheckbox.addEventListener('change', () => {
 
 // 根据 transcribeService 和字幕状态更新按钮文案与复选框文案
 function updateUI() {
+  if (activeTranscribeTask?.active) {
+    runBtn.textContent = '音频转写进行中';
+    return;
+  }
   if (runBtn.disabled) return;
   const noSubtitle = cachedHasSubtitle === false;
   const forceChecked = forceAIStudioCheckbox.checked;
@@ -85,6 +90,36 @@ function hideError() {
 
 function setStatus(msg) {
   statusText.textContent = msg + (canClose ? '（可关闭此窗口）' : '');
+}
+
+async function getActiveTranscribeTask(tabId) {
+  try {
+    return await chrome.runtime.sendMessage({ type: 'GET_TAB_TRANSCRIBE_STATUS', tabId });
+  } catch (e) {
+    return { active: false };
+  }
+}
+
+function applyActiveTranscribeTask(task) {
+  activeTranscribeTask = task?.active ? task : null;
+  if (activeTranscribeTask) {
+    runBtn.disabled = true;
+    setStatus(activeTranscribeTask.statusText || '当前页面已有音频转写任务进行中，请等待完成后再试。');
+    updateUI();
+    return true;
+  }
+  return false;
+}
+
+async function refreshActiveTranscribeTask(tabId) {
+  const task = await getActiveTranscribeTask(tabId);
+  if (applyActiveTranscribeTask(task)) {
+    return task;
+  }
+  activeTranscribeTask = null;
+  runBtn.disabled = false;
+  updateUI();
+  return task;
 }
 
 // Fetch video info (bvid, aid, cid) from Bilibili
@@ -199,6 +234,13 @@ async function run() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const pageUrl = tab.url || '';
 
+    const taskStatus = await getActiveTranscribeTask(tab.id);
+    if (taskStatus.active) {
+      applyActiveTranscribeTask(taskStatus);
+      showError('当前页面已有音频转写任务进行中，请等待完成后再试。');
+      return;
+    }
+
     if (!/bilibili\.com\/(video\/|list\/watchlater\/)/.test(pageUrl)) {
       showError('请在 B 站视频页面使用此扩展。');
       return;
@@ -227,13 +269,13 @@ async function run() {
       if (msg.type === 'ERROR') {
         showError(msg.text);
         isRunning = false;
-        runBtn.disabled = false;
+        void refreshActiveTranscribeTask(tab.id);
       }
       if (msg.type === 'DONE') {
         canClose = true;
         setStatus(msg.text);
         isRunning = false;
-        runBtn.disabled = false;
+        void refreshActiveTranscribeTask(tab.id);
       }
     });
 
@@ -241,7 +283,7 @@ async function run() {
       if (isRunning) {
         showError('后台任务连接已断开，请重试。');
         isRunning = false;
-        runBtn.disabled = false;
+        void refreshActiveTranscribeTask(tab.id);
       }
     });
 
@@ -352,7 +394,9 @@ async function run() {
   } finally {
     if (!handedOff) {
       isRunning = false;
-      runBtn.disabled = false;
+      if (!activeTranscribeTask?.active) {
+        runBtn.disabled = false;
+      }
     }
   }
 }
@@ -377,6 +421,9 @@ runBtn.addEventListener('click', run);
       return;
     }
 
+    const taskStatus = await getActiveTranscribeTask(tab.id);
+    activeTranscribeTask = taskStatus.active ? taskStatus : null;
+
     try {
       cachedVideoInfo = await fetchVideoInfo(pageUrl);
       const subtitle = await fetchSubtitle(cachedVideoInfo.bvid, cachedVideoInfo.aid, cachedVideoInfo.cid);
@@ -392,7 +439,9 @@ runBtn.addEventListener('click', run);
       // Pre-check failed, run() will retry
       setStatus('字幕探测失败，将在点击时重试');
     } finally {
-      runBtn.disabled = false;
+      if (!applyActiveTranscribeTask(activeTranscribeTask)) {
+        runBtn.disabled = false;
+      }
       updateUI();
     }
   } catch (e) {

@@ -4,6 +4,16 @@
 
   let statusOverlay = null;
 
+  function reportTranscribeTaskEvent(state, text, biliTabId) {
+    if (biliTabId == null) return;
+    chrome.runtime.sendMessage({
+      type: 'TRANSCRIBE_TASK_EVENT',
+      state,
+      text,
+      biliTabId,
+    }).catch(() => {});
+  }
+
   function showStatus(msg) {
     if (!statusOverlay) {
       statusOverlay = document.createElement('div');
@@ -121,7 +131,7 @@
 
   // --- Main handler ---
 
-  async function handleUploadAndRun(audioBuffer, fileName, prompt, tempChat, bgOpen, videoTitle, bvid) {
+  async function handleUploadAndRun(audioBuffer, fileName, prompt, tempChat, bgOpen, videoTitle, bvid, biliTabId) {
     if (!(audioBuffer.byteLength >= 1024)) {
       throw new Error(`音频数据异常（byteLength=${audioBuffer.byteLength}），下载可能失败，已中止`);
     }
@@ -129,24 +139,30 @@
     setTempChat(!!tempChat);
 
     showStatus('正在上传音频...');
+    reportTranscribeTaskEvent('status', '正在上传音频...', biliTabId);
     await dropAudioFile(audioBuffer, fileName);
 
     showStatus('正在等待文件就绪...');
+    reportTranscribeTaskEvent('status', '正在等待文件就绪...', biliTabId);
     await waitForFileAttached(fileName);
 
     showStatus('正在输入提示词...');
+    reportTranscribeTaskEvent('status', '正在输入提示词...', biliTabId);
     await typePrompt(prompt);
 
     if (videoTitle) {
       console.log('[ext] renaming before run, videoTitle:', videoTitle, 'bvid:', bvid);
       showStatus('正在设置标题...');
+      reportTranscribeTaskEvent('status', '正在设置标题...', biliTabId);
       await renamePromptTitle(videoTitle, bvid);
     } else {
       console.log('[ext] videoTitle is empty, skipping rename');
     }
 
     showStatus('正在运行...');
+    reportTranscribeTaskEvent('status', '正在运行...', biliTabId);
     await clickRunButton();
+    reportTranscribeTaskEvent('done', '已提交到 AI Studio，当前页面可再次发起新任务。', biliTabId);
 
     if (bgOpen) scrollToResponseOnTabFocus();
     hideStatus();
@@ -306,9 +322,10 @@
           for (let i = 0; i < binary.length; i++) u8[i] = binary.charCodeAt(i);
           const audioBuffer = u8.buffer;
           const prompt = await loadAIStudioPrompt();
-          await handleUploadAndRun(audioBuffer, fileName, prompt, msg.tempChat, msg.bgOpen, msg.videoTitle, msg.bvid);
+          await handleUploadAndRun(audioBuffer, fileName, prompt, msg.tempChat, msg.bgOpen, msg.videoTitle, msg.bvid, msg.biliTabId);
         } catch (e) {
           console.error('AISTUDIO_UPLOAD_AND_RUN failed:', e);
+          reportTranscribeTaskEvent('error', `错误：${e.message}`, msg.biliTabId);
           showError(`错误：${e.message}`);
         }
       })();
