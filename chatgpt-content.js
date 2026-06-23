@@ -5,35 +5,74 @@
 
   // --- Save subtitle button ---
   let _saveBtn = null;
+  let _retryUploadBtn = null;
 
-  function showSaveButton(fileName, fileContent) {
-    _lastFile = { name: fileName, content: fileContent };
-    if (_saveBtn) return; // already shown
-
-    _saveBtn = document.createElement('button');
-    _saveBtn.textContent = '⬇ 保存字幕文件';
-    _saveBtn.title = '字幕文件上传失败时，可手动下载后再上传';
-    _saveBtn.style.cssText =
-      'position:fixed;bottom:80px;right:16px;z-index:999999;' +
-      'background:#10a37f;color:#fff;border:none;cursor:pointer;' +
+  function getFloatingActionButtonStyle(bottomPx, background) {
+    return 'position:fixed;right:16px;z-index:999999;' +
+      `bottom:${bottomPx}px;` +
+      `background:${background};color:#fff;border:none;cursor:pointer;` +
       'padding:8px 14px;border-radius:8px;font-size:13px;' +
       'font-family:system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3);' +
       'display:flex;align-items:center;gap:6px;';
-    _saveBtn.addEventListener('click', () => {
-      if (!_lastFile) return;
-      const blob = new Blob([_lastFile.content], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = _lastFile.name;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
-    });
-    document.body.appendChild(_saveBtn);
+  }
+
+  function showSaveButton(fileName, fileContent) {
+    _lastFile = { name: fileName, content: fileContent };
+    if (_saveBtn && _retryUploadBtn) return; // already shown
+
+    if (!_retryUploadBtn) {
+      _retryUploadBtn = document.createElement('button');
+      _retryUploadBtn.textContent = '⤴ 重新上传字幕';
+      _retryUploadBtn.title = '再次触发字幕文件上传，但不会自动提交';
+      _retryUploadBtn.style.cssText = getFloatingActionButtonStyle(128, '#2563eb');
+      _retryUploadBtn.addEventListener('click', async () => {
+        if (!_lastFile) return;
+        const originalText = _retryUploadBtn.textContent;
+        _retryUploadBtn.disabled = true;
+        _retryUploadBtn.style.opacity = '0.7';
+        _retryUploadBtn.style.cursor = 'not-allowed';
+        try {
+          showStatus('正在重新上传字幕文件...');
+          await attachFileWithRetry(_lastFile.name, _lastFile.content);
+          showStatus('字幕文件已重新上传，可继续手动发送。');
+        } catch (e) {
+          console.error('[ext] manual retry upload failed:', e);
+          showError(`重新上传失败：${e.message}`);
+        } finally {
+          _retryUploadBtn.disabled = false;
+          _retryUploadBtn.style.opacity = '1';
+          _retryUploadBtn.style.cursor = 'pointer';
+          _retryUploadBtn.textContent = originalText;
+        }
+      });
+      document.body.appendChild(_retryUploadBtn);
+    }
+
+    if (!_saveBtn) {
+      _saveBtn = document.createElement('button');
+      _saveBtn.textContent = '⬇ 保存字幕文件';
+      _saveBtn.title = '字幕文件上传失败时，可手动下载后再上传';
+      _saveBtn.style.cssText = getFloatingActionButtonStyle(80, '#10a37f');
+      _saveBtn.addEventListener('click', () => {
+        if (!_lastFile) return;
+        const blob = new Blob([_lastFile.content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = _lastFile.name;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
+      });
+      document.body.appendChild(_saveBtn);
+    }
   }
 
   function hideSaveButton() {
+    if (_retryUploadBtn) {
+      _retryUploadBtn.remove();
+      _retryUploadBtn = null;
+    }
     if (_saveBtn) {
       _saveBtn.remove();
       _saveBtn = null;
@@ -98,6 +137,18 @@
     return document.querySelector('button[data-testid="send-button"]')
       || document.querySelector('button[aria-label*="Send"]')
       || document.querySelector('button[aria-label*="send"]');
+  }
+
+  function getVisibleFileTiles() {
+    return Array.from(document.querySelectorAll('[class*="file-tile"][role="group"]'));
+  }
+
+  function findFileTileByName(fileName, tiles = getVisibleFileTiles()) {
+    return tiles.find(tile => {
+      const ariaLabel = tile.getAttribute('aria-label') || '';
+      const text = tile.textContent || '';
+      return ariaLabel === fileName || ariaLabel.includes(fileName) || text.includes(fileName);
+    }) || null;
   }
 
   function checkReady() {
@@ -168,20 +219,44 @@
     dt.items.add(file);
 
     // Snapshot existing tiles before dispatching so we only wait for NEW ones
-    const existingTiles = new Set(
-      document.querySelectorAll('[class*="file-tile"][role="group"]')
-    );
+    const existingTiles = new Set(getVisibleFileTiles());
     console.log('[ext] attachFile: existingTiles count=', existingTiles.size);
 
     const fileInput = document.querySelector('#upload-files') || document.querySelector('input[type="file"]');
     if (!fileInput) throw new Error('找不到文件上传入口（#upload-files）');
     console.log('[ext] attachFile: using fileInput strategy, id=', fileInput.id);
+    try {
+      fileInput.value = '';
+    } catch (e) {
+      console.warn('[ext] attachFile: failed to clear file input value before upload', e);
+    }
     fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event('input', { bubbles: true }));
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
     // Return existingTiles so the caller can verify attachment later (right before send).
     console.log('[ext] attachFile: upload triggered, returning existingTiles for later verification');
     return existingTiles;
+  }
+
+  async function attachFileWithRetry(fileName, fileContent, maxAttempts = 2) {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log('[ext] attachFileWithRetry: starting attempt', attempt, 'of', maxAttempts);
+        const existingTiles = await attachFile(fileName, fileContent);
+        await waitForFileAttachment(fileName, existingTiles);
+        console.log('[ext] attachFileWithRetry: upload succeeded on attempt', attempt);
+        return;
+      } catch (e) {
+        lastError = e;
+        console.warn('[ext] attachFileWithRetry: upload attempt failed', attempt, 'of', maxAttempts, e);
+        if (attempt >= maxAttempts) break;
+      }
+    }
+
+    throw new Error(`字幕文件上传失败，已自动重试 ${Math.max(0, maxAttempts - 1)} 次：${lastError?.message || '未知错误'}`);
   }
 
   // Wait until the file upload is complete, using the send button's disabled state as the
@@ -202,14 +277,16 @@
       const timer = setInterval(() => {
         attempts++;
         const btn = findSendButton();
-        const allTiles = document.querySelectorAll('[class*="file-tile"][role="group"]');
-        const newTiles = Array.from(allTiles).filter(t => !existingTiles.has(t));
-        const fileTile = newTiles.find(t => t.getAttribute('aria-label') === fileName) ?? newTiles[0] ?? null;
+        const allTiles = getVisibleFileTiles();
+        const newTiles = allTiles.filter(t => !existingTiles.has(t));
+        const fileTile = findFileTileByName(fileName, allTiles);
+        const newFileTile = findFileTileByName(fileName, newTiles);
 
         if (attempts <= 5 || attempts % 10 === 0) {
           console.log('[ext] waitForFileAttachment: attempt', attempts,
             'sendDisabled=', btn?.disabled,
             'newTiles=', newTiles.length,
+            'newFileTile=', newFileTile?.getAttribute('aria-label') ?? 'none',
             'fileTile=', fileTile?.getAttribute('aria-label') ?? 'none');
         }
 
@@ -439,11 +516,10 @@
         try {
           showSaveButton(msg.file.name, msg.file.content);
           showStatus('正在添加字幕文件...');
-          const existingTiles = await attachFile(msg.file.name, msg.file.content);
           showStatus('正在输入提示词...');
           inputPrompt(await loadPrompt());
           showStatus('正在等待文件上传...');
-          await waitForFileAttachment(msg.file.name, existingTiles);
+          await attachFileWithRetry(msg.file.name, msg.file.content);
           fileAttached = true;
           console.log('[ext] CHATGPT_PREPARE_PROMPT: file attached successfully, proceeding to send');
           showStatus('正在发送...');
