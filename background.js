@@ -31,17 +31,18 @@ function waitForTabLoad(tabId, timeout = 120_000) {
   });
 }
 
-// Poll until ChatGPT content script reports ready
-// Returns 'ready' | 'not-logged-in' | 'timeout'
-async function ensureChatGPTReady(tabId) {
-  const maxAttempts = 10;
-  for (let i = 0; i < maxAttempts; i++) {
+// Poll until ChatGPT content script reports ready (textarea present).
+// Background tabs hydrate slowly (visibility-gated), so wait generously.
+// Returns 'ready' | 'timeout'
+async function ensureChatGPTReady(tabId, timeout = 600_000) {
+  const intervalMs = 1000;
+  const deadline = performance.now() + timeout;
+  while (performance.now() < deadline) {
     try {
       const response = await chrome.tabs.sendMessage(tabId, { type: 'CHATGPT_CHECK_READY' });
       if (response && response.ready) return 'ready';
-      if (response && !response.loggedIn) return 'not-logged-in';
     } catch (e) {}
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, intervalMs));
   }
   return 'timeout';
 }
@@ -395,9 +396,7 @@ async function _openChatGPTAndSend({ file, openerTabId, bgOpen, tempChat, biliTa
     overlayMsg(targetTabId, { type: 'EXT_STATUS', text: '正在连接 ChatGPT...' });
     const readyResult = await ensureChatGPTReady(targetTabId);
     if (readyResult !== 'ready') {
-      const errMsg = readyResult === 'not-logged-in'
-        ? '请先登录 chatgpt.com，然后重试。'
-        : '无法连接到 ChatGPT 页面，请刷新 chatgpt.com 后重试。';
+      const errMsg = '无法连接到 ChatGPT 页面，请刷新 chatgpt.com 后重试。';
       overlayMsg(targetTabId, { type: 'EXT_ERROR', text: errMsg });
       return { ok: false, error: errMsg };
     }

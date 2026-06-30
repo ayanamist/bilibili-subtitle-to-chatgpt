@@ -153,7 +153,7 @@
 
   function checkReady() {
     const textarea = findTextarea();
-    return { ready: !!textarea, loggedIn: !!textarea };
+    return { ready: !!textarea };
   }
 
   function inputPrompt(text) {
