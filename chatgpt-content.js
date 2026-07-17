@@ -241,8 +241,10 @@
 
   async function attachFileWithRetry(fileName, fileContent, maxAttempts = 2) {
     let lastError = null;
+    let attemptsMade = 0;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      attemptsMade = attempt;
       try {
         console.log('[ext] attachFileWithRetry: starting attempt', attempt, 'of', maxAttempts);
         const existingTiles = await attachFile(fileName, fileContent);
@@ -252,11 +254,15 @@
       } catch (e) {
         lastError = e;
         console.warn('[ext] attachFileWithRetry: upload attempt failed', attempt, 'of', maxAttempts, e);
-        if (attempt >= maxAttempts) break;
+        // A timed-out upload may still be owned and processed by ChatGPT. Starting
+        // another attempt in that state creates duplicate attachments because the
+        // original browser upload cannot be cancelled from this content script.
+        // Only retry after the UI has positively shown that the attachment failed.
+        if (attempt >= maxAttempts || !e.retryable) break;
       }
     }
 
-    throw new Error(`字幕文件上传失败，已自动重试 ${Math.max(0, maxAttempts - 1)} 次：${lastError?.message || '未知错误'}`);
+    throw new Error(`字幕文件上传失败，已自动重试 ${Math.max(0, attemptsMade - 1)} 次：${lastError?.message || '未知错误'}`);
   }
 
   // Wait until the file upload is complete, using the send button's disabled state as the
@@ -273,41 +279,68 @@
   function waitForFileAttachment(fileName, existingTiles = new Set()) {
     return new Promise((resolve, reject) => {
       let attempts = 0;
-      const maxAttempts = 150; // 30 seconds max
+      let newFileTile = null;
+      let missingSince = null;
+      let reportedSlowUpload = false;
+      const slowUploadAttempts = 150; // 30 seconds: log only, do not retry
+      const maxAttempts = 1500; // 5 minutes hard limit
+
+      function fail(message, retryable) {
+        clearInterval(timer);
+        const error = new Error(message);
+        error.retryable = retryable;
+        reject(error);
+      }
+
       const timer = setInterval(() => {
         attempts++;
         const btn = findSendButton();
         const allTiles = getVisibleFileTiles();
         const newTiles = allTiles.filter(t => !existingTiles.has(t));
-        const fileTile = findFileTileByName(fileName, allTiles);
-        const newFileTile = findFileTileByName(fileName, newTiles);
+        if (!newFileTile || !allTiles.includes(newFileTile)) {
+          newFileTile = findFileTileByName(fileName, newTiles) || newFileTile;
+        }
+        const tileStillPresent = !!newFileTile && allTiles.includes(newFileTile);
 
         if (attempts <= 5 || attempts % 10 === 0) {
           console.log('[ext] waitForFileAttachment: attempt', attempts,
             'sendDisabled=', btn?.disabled,
             'newTiles=', newTiles.length,
             'newFileTile=', newFileTile?.getAttribute('aria-label') ?? 'none',
-            'fileTile=', fileTile?.getAttribute('aria-label') ?? 'none');
+            'tileStillPresent=', tileStillPresent);
         }
 
         // Send button enabled → upload finished (success or failure)
         if (btn && !btn.disabled) {
-          clearInterval(timer);
-          if (fileTile) {
-            console.log('[ext] waitForFileAttachment: upload success, tile=', fileTile.getAttribute('aria-label'));
+          if (tileStillPresent) {
+            clearInterval(timer);
+            console.log('[ext] waitForFileAttachment: upload success, tile=', newFileTile.getAttribute('aria-label'));
             resolve();
-          } else {
+          } else if (newFileTile) {
             console.warn('[ext] waitForFileAttachment: send button enabled but file tile is gone → upload failed');
-            reject(new Error('字幕文件上传失败（文件块已消失），请重试'));
+            fail('字幕文件上传失败（文件块已消失），请重试', true);
+          } else {
+            // The change event and ChatGPT's tile rendering are asynchronous. Give
+            // the UI a short grace period before treating "no tile" as a real failure.
+            missingSince ??= Date.now();
+            if (Date.now() - missingSince >= 5000) {
+              console.warn('[ext] waitForFileAttachment: no new file tile appeared');
+              fail('字幕文件上传失败（未出现文件块），请重试', true);
+            }
           }
           return;
         }
+        missingSince = null;
+
+        if (attempts >= slowUploadAttempts && !reportedSlowUpload) {
+          reportedSlowUpload = true;
+          console.warn('[ext] waitForFileAttachment: upload is taking longer than 30 seconds; continuing to wait without retrying');
+        }
 
         if (attempts >= maxAttempts) {
-          clearInterval(timer);
-          console.warn('[ext] waitForFileAttachment: timed out. sendDisabled=', btn?.disabled,
-            'newTiles=', newTiles.length);
-          reject(new Error('字幕文件上传超时，请重试'));
+          console.warn('[ext] waitForFileAttachment: hard timeout. sendDisabled=', btn?.disabled,
+            'newTiles=', newTiles.length, 'tileStillPresent=', tileStillPresent);
+          fail('字幕文件上传等待超过 5 分钟；为避免重复文件，已停止自动重试', false);
         }
       }, 200);
     });
